@@ -1,8 +1,8 @@
 import { generatorParameters, createEmptyCard, FSRSParameters, Card, State } from "ts-fsrs";
-import { Note, MindMap, MapSettings, ListItem } from "types";
+import { Note, MindMap, ListItem } from "types";
 import { interpolateRainbow, style } from "d3";
 
-export const listItemPattern = "(\\t*)(\\d+\\. |- )(.+)";
+export const listItemPattern = "(\\t*)(\\d+\\. |- )(.+(?:\\S))";
 export const listItemRegex = RegExp(listItemPattern, 'd');
 
 export const cardTagOpen = "%%card";
@@ -10,7 +10,8 @@ export const cardTagClose = "%%";
 export const cardTagPattern = `${cardTagOpen}(.*?)${cardTagClose}`;
 export const cardTagRegex = RegExp(cardTagPattern, 'd');
 
-export const notePattern = `^(?<indent>\\t*)(?<list>\\d+\\. |- )(?<content>.*?)${cardTagOpen}(?<card>.*?)${cardTagClose}`;
+// [1] tabs; [2] list delimiter; [3] content; [4] id tag; [5] id; [6] card
+export const notePattern = `^(\\t*)(\\d+\\. |- )(.*?)(#(\\w*))?${cardTagOpen}(.*?)${cardTagClose}`;
 export const noteRegex = RegExp(notePattern, 'd');
 
 export const idTagPattern = "#(\\w*)$";
@@ -43,37 +44,35 @@ export function parseNumberArray(array: string): number[] {
   return splitString.map((str) => parseFloat(str));
 }
 
-// parses map tag (contents only)
-export function parseMapTag(string: string): MapSettings {
-	const parameters = string.trim().split(';');
+// parses map tag
+export function parseMapTag(text: string): MindMap {
+	const parameters = text.trim().split(';');
 	const props: Partial<FSRSParameters> = {
-		enable_fuzz: parameters[3] !== "" ? parameters[3] === "true" : undefined, 
-		enable_short_term: parameters[4] !== "" ? parameters[4] === "true" : undefined, 
-		maximum_interval: parameters[5] !== "" ? parseFloat(parameters[5]) : undefined, 
-		request_retention: parameters[6] !== "" ? parseFloat(parameters[6]) : undefined, 
-		w: parameters[7] !== "" ? parseNumberArray(parameters[7]) : undefined, 
+		enable_fuzz: parameters[1] !== "" ? parameters[1] === "true" : undefined, 
+		enable_short_term: parameters[2] !== "" ? parameters[2] === "true" : undefined, 
+		maximum_interval: parameters[3] !== "" ? parseFloat(parameters[3]) : undefined, 
+		request_retention: parameters[4] !== "" ? parseFloat(parameters[4]) : undefined, 
+		w: parameters[6] !== "" ? parseNumberArray(parameters[6]) : undefined, 
 	};
 	return { 
 		title: parameters[0], 
-		separateHeadings: parameters[1] !== "" ? parameters[1] === "true" : false, 
-		crosslink: parameters[2] !== "" ? parameters[2] === "true" : true,
 		studySettings: generatorParameters(props),
+		range: [], // placeholder
+		notes: [], // placeholder
 	};
 }
 
-export function parseMindMap(text: string): MindMap | null {
-	const mindMap = {} as MindMap;
-
+/* export function parseMindMap(text: string, includeRef: boolean): MindMap | null {
 	// map settings
 	const mapTagRegex = new RegExp(mapTagPattern, 'gm');
 	let mapMatch = mapTagRegex.exec(text);
 	if (!mapMatch) {
 		console.log("Study parameters not found");
 		return null;
-	} else {
-		mindMap.map = parseMapTag(mapMatch[1]);
 	}
-
+	
+	const mindMap = parseMapTag(mapMatch[1]);
+	
 	// notes
 	const noteRegex = new RegExp(notePattern, 'gm');
 	let noteMatch;
@@ -82,9 +81,9 @@ export function parseMindMap(text: string): MindMap | null {
 	}
 
 	return mindMap;
-}
+} */
 
-export function noteTree(items: ListItem[], levels: number[], path: string[]): string[][] {
+/* export function noteTree(items: ListItem[], levels: number[], path: string[]): string[][] {
 	// get indices of lines of immediate children
 	const notesAtCurrentLevel: number[] = [];
 	for (let i = 0; i < items.length; i++) { // iterate over each entry
@@ -108,36 +107,53 @@ export function noteTree(items: ListItem[], levels: number[], path: string[]): s
 	}
 
 	return paths;
+} */
+
+export function canStudy(content: string): boolean {
+	let study = true;
+	if (/^\(.*\)$/.test(content)) { // info note
+		study = false;
+	} else if (/:$/.test(content) && !/{.*}/.test(content)) { // relation with no cloze
+		study = false;
+	}
+	return study;
 }
 
-// content = listItemMatch[3]
-export function parseListItem(content: string): ListItem {
-	content = content.trim();
-	const result: ListItem = {
-		content: content, 
-		type: 'key word', 
-		id: undefined
-	}
+// input: string that matched with listItemRegex
+export function parseListItem(match: RegExpExecArray): ListItem {
+	let level = match[1].length;
+	let listNumber = parseListNumber(match[2]);
 
-	let idMatch = idTagRegex.exec(content);
-	if (idMatch) {
-		result.id = idMatch[1];
-		const indices = (idMatch as any).indices;
-		result.content = content.slice(0, indices[0][0]).trim();
+	// all text after list delimiter
+	// +/- #idtag
+	// +/- %%card%% tag
+	let content = match[3].trim();
+	let cardTagMatch = cardTagRegex.exec(content);
+	let card;
+	if (cardTagMatch) {
+		card = parseCard(cardTagMatch[1]);
+		content = content.slice(0, cardTagMatch.index).trim();
 	}
-
-	switch (content.slice(-1)) {
-		case ':':
-			result.type = 'relation';
-			break;
-		case ')':
-			if (content.startsWith('(')) {
-				result.type = 'info';
-			}
-			break;
+	let idTagMatch = idTagRegex.exec(content);
+	let id = undefined;
+	if (idTagMatch) {
+		id = idTagMatch[1];
+		content = content.slice(0, idTagMatch.index).trim();
 	}
+	let study = canStudy(content);
 	
-	return result;
+	return { level, listNumber, content, study, id, card, line: undefined, indices: undefined };
+}
+
+export function parseNote(match: RegExpExecArray): Note {
+	let level = match[1].length;
+	let listNumber = parseListNumber(match[2]);
+	let content = match[3].trim();
+	let study = canStudy(content);
+	let id = match[4] ? match[5] : undefined;
+	let card = parseCard(match[6]);
+	
+	return { level, listNumber, content, study, id, card, line: undefined, indices: undefined };
 }
 
 export function parseListNumber(str: string): number {
@@ -146,9 +162,9 @@ export function parseListNumber(str: string): number {
 }
 
 // parse parameters in card tag
-export function parseCard(tag: string): Card | null {
+export function parseCard(tag: string): Card | undefined {
 	if (tag === "") {
-		return null;
+		return undefined;
 	}
 	const props = tag.split(';');
 
@@ -168,7 +184,8 @@ export function parseCard(tag: string): Card | null {
 // parse note with card tag
 // return note with assigned properties
 // must pass in a RegExpExecArray matched with the note pattern
-export function parseNote(match: RegExpExecArray): Note {
+// line: 0-based index of line in document. 
+/* export function parseNote(match: RegExpExecArray, line?: number): Note {
 	const note = {} as Note;
 
 	note.listNumber = parseListNumber(match[2]);
@@ -177,21 +194,14 @@ export function parseNote(match: RegExpExecArray): Note {
 	note.content = content;
 	note.id = id;
 	note.type = type;
-
 	note.card = parseCard(match[4]);
+	if (line) {
+		note.line = line;
+		note.indices = (match as any).indices;
+	}
 
 	return note;
-}
-
-export function canStudy(content: string, type: 'key word' | 'relation' | 'info'): boolean {
-	switch(type) {
-		case 'key word': return true
-		case 'info': return false
-		case 'relation':
-			const containsClozes = /{.+?}/.test(content);
-			return containsClozes;
-	}
-}
+} */
 
 const NOTE_ID_MAX_LENGTH = 12;
 // const pastedImageRegexGlobal = RegExp(pastedImagePattern, 'gm');
@@ -240,16 +250,14 @@ export function generateNoteString(note: Note): string {
 }
 
 // creates map tag
-export function generateMapString(settings: MapSettings, includeTags = true): string {
+export function generateMapString(mindMap: MindMap, includeTags = true): string {
 	const propStrings: string[] = [
-		settings.title,
-		settings.separateHeadings.toString(), 
-		settings.crosslink.toString(), 
-		settings.studySettings.enable_fuzz.toString(), 
-		settings.studySettings.enable_short_term.toString(), 
-		settings.studySettings.maximum_interval.toString(),
-		settings.studySettings.request_retention.toString(), 
-		settings.studySettings.w.join(','), 
+		mindMap.title,
+		mindMap.studySettings.enable_fuzz.toString(), 
+		mindMap.studySettings.enable_short_term.toString(), 
+		mindMap.studySettings.maximum_interval.toString(),
+		mindMap.studySettings.request_retention.toString(), 
+		mindMap.studySettings.w.join(','), 
 	];
 	let string = propStrings.join(';') 
 

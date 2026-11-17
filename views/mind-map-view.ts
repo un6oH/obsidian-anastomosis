@@ -1,5 +1,5 @@
 import { ItemView, Notice, WorkspaceLeaf } from 'obsidian';
-import { MindMap, MindMapLayout, NoteGroup } from 'types';
+import { MindMap, MindMapLayout, Note, NoteGroup } from 'types';
 import { colour, formatContent } from 'helpers';
 import * as d3 from 'd3';
 import { Card, fsrs, FSRS, Grade, Grades, IPreview, Rating, show_diff_message } from 'ts-fsrs';

@@ -15,16 +15,16 @@ If your plugin does not need CSS, delete this file.
 }
 
 .widget-map-title {
-  display: block;
+  display: inline;
 }
 
 .widget-map-title h1 {
   margin: 0 0.5em 0.5ex 0;
 }
 
-.widget-menu-spacer {
+.widget-map-menu-spacer {
   display: block;
-  height: 0;
+  height: 1ex;
 }
 
 .widget-map-menu {
@@ -49,6 +49,7 @@ If your plugin does not need CSS, delete this file.
   padding: 0 0.25em 0 0.25em;
   cursor: var(--cursor-link);
   margin-left: 0.5em;
+  opacity: 100%;
 }
 
 .widget-note:hover {
@@ -67,15 +68,6 @@ If your plugin does not need CSS, delete this file.
   /* padding: 0.25em; */
 }
 
-.widget-note-study {
-  opacity: 100%;
-  /* font-weight: bold; */
-}
-
-.widget-note-nostudy {
-  opacity: 75%;
-}
-
 .widget-note.conflict {
   background-color: rgba(255, 0, 0, 0.1);
 }
@@ -84,29 +76,23 @@ If your plugin does not need CSS, delete this file.
   background-color: rgba(255, 0, 0, 0.2);
 }
 
+.widget-error {
+  font-style: italic;
+  opacity: 60%;
+}
+
 .widget-error-delete {
   font-style: italic;
   color: red;
-  opacity: 60%;
 }
 
 .widget-error-dismiss {
   font-style: italic;
   color: green;
-  opacity: 60%
-}
-
-.widget-error-warning {
-  font-style: italic;
-  opacity: 60%;
 }
 
 .mark-indent-error {
   background-color: rgba(255, 0, 0, 0.5);
-}
-
-.mark-tabs {
-  background-color: rgba(0, 0, 0, 0.5);
 }
 
 .mindmap-text {

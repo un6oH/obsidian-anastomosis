@@ -1,20 +1,22 @@
 import { EditorView } from '@codemirror/view';
-import { App, ButtonComponent, Editor, Modal, Notice, Plugin, Setting, SuggestModal, TextComponent, ToggleComponent } from 'obsidian';
-import { Card, createEmptyCard, FSRSParameters, generatorParameters, State } from 'ts-fsrs';
-import { ListItem, MapSettings, MindMap, Note, Warning } from 'types';
-import { notePattern, parseNote, parseNumberArray, parseMapTag, toNoteID, generateMapString, errorPattern, mapTagOpen, mapTagClose, noteRegex, idTagRegex, parseListItem, canStudy, generateNoteString } from 'helpers';
-import MindMapEditorPlugin, { dismissWarnings, openMindMapView, updateMapSettings, createCards } from 'main';
+import { App, ButtonComponent, Editor, Modal, Setting, SuggestModal, TextComponent, ToggleComponent } from 'obsidian';
+import { createEmptyCard, generatorParameters, State } from 'ts-fsrs';
+import { ListItem, MindMap, Note, NoteList } from 'types';
+import { parseNumberArray, parseMapTag, generateMapString, parseListItem, canStudy, generateNoteString, cardTagOpen, cardTagClose } from 'helpers';
+import MindMapEditorPlugin from 'main';
 
 export class MindMapCreatorModal extends Modal {
 	constructor(app: App, title: string, editorCallback: (text: string) => void) {
 		super(app);
 
 		this.setTitle("Create a mind map");
-		const map: MapSettings = {
+		const map: MindMap = {
 			title: title ? title : "My mind map",
-			separateHeadings: false, 
-			crosslink: true, 
+			// separateHeadings: false, 
+			// crosslink: true, 
 			studySettings: generatorParameters(),
+			range: [],
+			notes: [],
 		}
 
 		new Setting(this.contentEl)
@@ -24,23 +26,6 @@ export class MindMapCreatorModal extends Modal {
 				.onChange((value) => {
 					map.title = value;
 				}));
-
-		new Setting(this.contentEl)
-			.setName("Separate headings")
-			.setDesc("Turn on to remove the centre node to create separate mind maps")
-			.addToggle((toggle) => toggle
-				.setValue(map.separateHeadings)
-				.onChange((value) => map.separateHeadings = value)
-			);	
-
-		new Setting(this.contentEl)
-			.setName("Crosslink")
-			.setDesc("Identical key words link together")
-			.addToggle((toggle) => toggle
-				.setValue(map.crosslink)
-				.onChange((value) => map.crosslink = value)
-			);
-
 		new Setting(this.contentEl)
 			.setName("Desired retention")
 			.addText((text) => text
@@ -49,7 +34,6 @@ export class MindMapCreatorModal extends Modal {
 					let v = parseFloat(value);
 					if (v) map.studySettings.request_retention = v;
 				}));
-		
 		new Setting(this.contentEl)
 			.setName("Maximum interval")
 			.addText((text) => text
@@ -58,7 +42,6 @@ export class MindMapCreatorModal extends Modal {
 					let v = parseFloat(value);
 					if (v) map.studySettings.maximum_interval = v;
 				}));
-
 		new Setting(this.contentEl)
 			.setName("Parameters")
 			.addText((text) => text
@@ -67,7 +50,6 @@ export class MindMapCreatorModal extends Modal {
 					let v = parseNumberArray(value);
 					if (v) map.studySettings.w = v;
 				}));
-
 		new Setting(this.contentEl)
 			.setName("Enable fuzz")
 			.addText((text) => text
@@ -76,7 +58,6 @@ export class MindMapCreatorModal extends Modal {
 					let v = value === "true";
 					if (v) map.studySettings.enable_fuzz = v;
 				}));
-		
 		new Setting(this.contentEl)
 			.setName("Enable short term")
 			.addText((text) => text
@@ -85,7 +66,6 @@ export class MindMapCreatorModal extends Modal {
 					let v = value === "true";
 					if (v) map.studySettings.enable_short_term = v;
 				}));
-
 		new Setting(this.contentEl)
 			.addButton((btn) => btn
 				.setButtonText("Create")
@@ -98,42 +78,16 @@ export class MindMapCreatorModal extends Modal {
 	}
 }
 
-export class UpdateNotesModal extends Modal {
-	constructor(app: App, editor: Editor) {
-		super(app);
-
-		this.setTitle("Update notes");
-
-		const settings = parseMapTag(editor.getLine(1));
-
-		new Setting(this.contentEl)
-			.setName(`Crosslink ${settings.crosslink ? "enabled" : "disabled"}`);
-
-		new Setting(this.contentEl)
-			.addButton((button) => button
-				.setButtonText("Dismiss")
-				.setCta()
-				.onClick(this.close))
-			.addButton((button) => button
-				.setButtonText("Update notes")
-				.setCta()
-				.onClick(() => {
-					createCards(editor);
-					this.close();
-				}));
-	}
-}
-
-export class StudyMindMapModal extends Modal {
+export class ViewMindMapModal extends Modal {
 	constructor(plugin: MindMapEditorPlugin, editor: Editor, mindMap: MindMap) {
 		super(plugin.app);
 
-		this.setTitle("Study " + mindMap.map.title);
+		this.setTitle("Study " + mindMap.title);
 
 		let newCount = 0, learningCount = 0, reviewCount = 0;
 		mindMap.notes.forEach((note) => {
 			if (!note.card) return;
-			switch(note.card.state) {
+			switch (note.card.state) {
 				case State.New: newCount++; break;
 				case State.Learning || State.Relearning: learningCount++; break;
 				case State.Review: reviewCount++; break;
@@ -170,120 +124,90 @@ export class StudyMindMapModal extends Modal {
 			.setName("Settings:");
 
 		new Setting(this.contentEl)
-			.setName("Separate headings")
-			.setDesc("Turn on to remove the centre node to create separate mind maps")
-			.addToggle((toggle) => toggle
-				.setValue(mindMap.map.separateHeadings)
-				// .setValue(mindMap.map.settings.separateHeadings)
-				.onChange((value) => mindMap.map.separateHeadings = value)
-				.setDisabled(true)
-			);
-			
-		new Setting(this.contentEl)
-			.setName("Crosslink")
-			.setDesc("Identical key words link together")
-			.addToggle((toggle) => toggle
-				.setValue(mindMap.map.crosslink)
-				.onChange((value) => mindMap.map.crosslink = value)
-			);
-		
-		new Setting(this.contentEl)
 			.addButton((button) => button
 				.setButtonText("Update")
 				.setCta()
 				.onClick(() => {
-					new UpdateNotesModal(plugin.app, editor).open();
+					// new UpdateNotesModal(plugin.app, editor).open();
+					// update notes
 				}))
 			.addButton((button) => button
 				.setButtonText("Let's go!")
 				.setCta()
 				.onClick(() => {
-					openMindMapView(plugin, editor, mindMap);
+					plugin.openMindMapView(mindMap);
 					this.close();
 				}));
 	}
 }
 
 export class MapSettingsEditorModal extends Modal {
-	editor: Editor = {} as Editor;
-
 	// start and end of tag
-	constructor(app: App, view: EditorView, match: RegExpExecArray) {
+	constructor(app: App, editor: Editor, match: RegExpExecArray, line: number) {
 		// console.log("Created map study settings editor modal", "start:", start, "end:", end);
 		super(app);
-		
+		const mindMap = parseMapTag(match[0]);
+		const indices = (match as any).indices;
+
 		// parse data string
-		this.setTitle("Map settings");
-		const map = parseMapTag(match[1]);
+		this.setTitle("Mind Map Settings");
 
 		new Setting(this.contentEl)
 			.setName("Title")
-			.addText(text => 
+			.addText(text =>
 				text
-					.setPlaceholder(map.title)
-					.setValue(map.title)
+					.setPlaceholder(mindMap.title)
+					.setValue(mindMap.title)
 					.onChange((value) => {
-						map.title = value;
+						mindMap.title = value;
 					})
 			);
 
 		new Setting(this.contentEl)
-			.setName("Separate headings")
-			.setDesc("Turn on to remove the centre node to create separate mind maps")
+			.setName('Enable fuzz')
+			.setDesc("Allow due dates to spread out over time")
 			.addToggle((toggle) => toggle
-				.setValue(map.separateHeadings)
-				.onChange((value) => map.separateHeadings = value)
-			);
-		new Setting(this.contentEl)
-			.setName("Crosslink")
-			.setDesc("Identical key words link together")
-			.addToggle((toggle) => toggle
-				.setValue(map.crosslink)
-				.onChange((value) => map.crosslink = value)
-			);
-		new Setting(this.contentEl)
-      .setName('Enable fuzz')
-      .addToggle((toggle) => toggle
-				.setValue(map.studySettings.enable_fuzz)
-				.onChange((value) => map.studySettings.enable_fuzz = value)
+				.setValue(mindMap.studySettings.enable_fuzz)
+				.onChange((value) => mindMap.studySettings.enable_fuzz = value)
 			);
 		new Setting(this.contentEl)
 			.setName('Enable short term')
 			.addToggle((toggle) => toggle
-				.setValue(map.studySettings.enable_short_term)
-				.onChange((value) => map.studySettings.enable_short_term = value)
+				.setValue(mindMap.studySettings.enable_short_term)
+				.onChange((value) => mindMap.studySettings.enable_short_term = value)
 			);
 		new Setting(this.contentEl)
-			.setName('maximum interval')
+			.setName('Maximum interval (days)')
 			.addText((text) =>
-				text.setPlaceholder(map.studySettings.maximum_interval.toString()).onChange((value) => {
-					map.studySettings.maximum_interval = parseFloat(value);
+				text.setPlaceholder(mindMap.studySettings.maximum_interval.toString()).onChange((value) => {
+					mindMap.studySettings.maximum_interval = parseFloat(value);
 				}));
 		new Setting(this.contentEl)
-			.setName('Request retention')
+			.setName('Target retention')
+			.setDesc("Proportion of notes you want to remember at each session.")
 			.addText((text) =>
-				text.setPlaceholder(map.studySettings.request_retention.toString()).onChange((value) => {
-					map.studySettings.request_retention = parseFloat(value);
+				text.setPlaceholder(mindMap.studySettings.request_retention.toString()).onChange((value) => {
+					mindMap.studySettings.request_retention = parseFloat(value);
 				}));
 
-		const indices = (match as any).indices;
 		new Setting(this.contentEl)
 			.addButton((btn) => {
 				btn
 					.setButtonText('OK')
 					.setCta()
 					.onClick(() => {
-						this.updateSettings(view, map, indices[1][0], indices[1][1]);
+						this.updateSettings(editor, mindMap, line, indices[1][0], indices[1][1]);
 						this.close();
 					})
 			});
 	}
 
-	updateSettings(view: EditorView, settings: MapSettings, from: number, to: number) {
-		const edit = view.state.update({
-			changes: { from, to, insert: generateMapString(settings, false) }
-		});
-		view.dispatch(edit);
+	updateSettings(editor: Editor, mindMap: MindMap, line: number, from: number, to: number) {
+		editor.replaceRange(
+			generateMapString(mindMap, false),
+			{ line: line, ch: from },
+			{ line: line, ch: to }
+		)
 	}
 }
 
@@ -291,9 +215,9 @@ export class MapSettingsEditorModal extends Modal {
 export class NoteEditorModal extends Modal {
 	constructor(app: App, view: EditorView, listItemMatch: RegExpExecArray) {
 		super(app);
-		const note = parseNote(listItemMatch);
+		const note = parseListItem(listItemMatch);
 		const card = note.card!;
-		const initial = parseNote(listItemMatch);
+		const initial = parseListItem(listItemMatch);
 
 		let contentField: TextComponent;
 		let unlinkToggle: ToggleComponent;
@@ -301,52 +225,43 @@ export class NoteEditorModal extends Modal {
 		let studyToggle: ToggleComponent;
 		let applyChangesButton: ButtonComponent;
 
-		let title = "";
-		switch(note.type) {
-			case 'key word':
-				title += "[Key word] ";
-				break;
-			case 'relation':
-				title += "[Relation] ";
-				break;
-			case 'info':
-				title += "[Info] ";
-				break;
-		}
+		let title = "Edit Note: ";
 		title += note.content;
 		this.setTitle(title);
 
 		// displays path
 		const pathDisplay = new Setting(this.contentEl)
-      .setDesc("show path here");
+			.setDesc("show path here");
 
 		// settings
 		new Setting(this.contentEl)
 			.setName("Content")
 			// .setDesc("Warning: changing content may disconnect linked notes")
-			.addText((text) => 
+			.addText((text) =>
 				contentField = text
 					.setPlaceholder(initial.content)
 					.setValue(note.content)
 					.onChange((value) => {
-						const { content, type } = parseListItem(value)
-						note.content = content;
-						if (content === "" && !note.id) {
-							applyChangesButton.setDisabled(true);
+						const content = value.trim();
+						if (content === "") {
+							applyChangesButton.setDisabled(note.id ? true : false);
+							note.content = "";
 						} else {
+							const study = canStudy(content);
+							studyToggle.setValue(study);
 							applyChangesButton.setDisabled(false);
+							note.content = content;
 						}
-						studyToggle.setValue(canStudy(content, type));
-						// update the path display 
-					}))
-			.addButton((button) => 
+					}
+					))
+			.addButton((button) =>
 				button
 					.setButtonText("Reset")
 					.setCta()
 					.onClick(() => {
 						contentField.setValue(initial.content);
 						note.content = initial.content;
-						studyToggle.setValue(initial.card ? true : false);
+						studyToggle.setValue(initial.study);
 						// update the path display
 						// update the card display
 					})
@@ -355,7 +270,7 @@ export class NoteEditorModal extends Modal {
 		new Setting(this.contentEl)
 			.setName("Force unlink")
 			.setDesc("Node will not merge with similar nodes")
-			.addToggle((toggle) => 
+			.addToggle((toggle) =>
 				unlinkToggle = toggle
 					.setValue(note.id === "") // blank # means force unlink
 					.onChange((unlink) => {
@@ -374,7 +289,7 @@ export class NoteEditorModal extends Modal {
 		new Setting(this.contentEl)
 			.setName('ID')
 			.setDesc("Add a new tag or search existing tags. Letters and numbers only")
-			.addText((text) => 
+			.addText((text) =>
 				idField = text
 					.setPlaceholder(note.id === "" ? "linking disabled" : (note.id ? note.id : ""))
 					.setValue(note.id ? note.id : "")
@@ -405,29 +320,30 @@ export class NoteEditorModal extends Modal {
 				.setButtonText("Search")
 				.setCta()
 				.onClick(() => {
-					new IdSuggestModal(app, view, note.content, (id: string) => {
-						note.id = id;
+					new IdSuggestModal(app, view, note.content, (referenceNote: Note) => {
+						note.id = referenceNote.id!;
 						unlinkToggle.setValue(false);
-						idField.setValue(id);
-						// update the content
+						idField.setValue(note.id);
+						// 
 					}).open();
 				})
 			);
-		
+
 		// toggle to select studyable
 		const studySetting = new Setting(this.contentEl)
 			.setName('Studyable')
-			.addToggle((toggle) => 
+			.addToggle((toggle) =>
 				studyToggle = toggle
 					.setValue(note.card ? true : false)
 					.onChange((study) => {
+						note.study = study;
 						if (study) {
 							note.card = initial.card ? initial.card : createEmptyCard();
 							studySetting.setDesc("");
 							applyChangesButton.setButtonText("Apply changes");
 							unlockCardSettings();
 						} else {
-							note.card = null;
+							note.card = undefined;
 							studySetting.setDesc("Incorrect format to be studied. The card will be deleted.");
 							applyChangesButton.setButtonText("Delete card");
 							lockCardSettings();
@@ -435,7 +351,7 @@ export class NoteEditorModal extends Modal {
 					})
 					.setDisabled(true)
 			);
-			
+
 		let dueDateSetting: Setting;
 		dueDateSetting = new Setting(this.contentEl)
 			.setName('Due date')
@@ -472,13 +388,13 @@ export class NoteEditorModal extends Modal {
 
 		const indices = (listItemMatch as any).indices;
 		new Setting(this.contentEl)
-			.addButton(btn => 
+			.addButton(btn =>
 				btn
 					.setButtonText('Dismiss changes')
 					.setCta()
 					.onClick(() => this.close())
 			)
-			.addButton(btn => 
+			.addButton(btn =>
 				applyChangesButton = btn
 					.setButtonText('Apply changes')
 					.setCta()
@@ -494,8 +410,8 @@ export class NoteEditorModal extends Modal {
 	updateData(view: EditorView, indices: number[][], note: Note) {
 		const contentEdit = view.state.update({
 			changes: {
-				from: indices[3][0], 
-				to: indices[0][1], 
+				from: indices[3][0],
+				to: indices[0][1],
 				insert: generateNoteString(note)
 			}
 		});
@@ -504,25 +420,24 @@ export class NoteEditorModal extends Modal {
 }
 
 class IdSuggestModal extends SuggestModal<ListItem> {
-	callback: (id: string) => void;
+	callback: (item: ListItem) => void;
 	items: ListItem[];
 	defaultQuery: string;
-	constructor(app: App, view: EditorView, defaultQuery: string, callback: (id: string) => void) {
+	constructor(app: App, view: EditorView, defaultQuery: string, callback: (note: Note) => void) {
 		super(app)
 		this.callback = callback;
 		this.items = [];
 		// this.paths = [];
 		this.defaultQuery = defaultQuery;
-		
-		const tagRegex = RegExp("(\\t*)(\\d+. |- )(.*?)(#\\w+)", 'd');
+
+		const tagRegex = RegExp(`(\\t*)(\\d+. |- )(.*?)(#\\w+)(${cardTagOpen}.*?${cardTagClose})?`, 'd');
 		for (let line of view.state.doc.iterLines()) {
-			const tagMatch = tagRegex.exec(line);
-			if (tagMatch) {
-				this.items.push({
-					content: tagMatch[3].trim(), 
-					type: 'key word', 
-					id: tagMatch[4].slice(1)
-				});
+			const match = tagRegex.exec(line);
+			if (match) {
+				if (match[5]) {
+					match[3] += match[4] + match[5];
+				}
+				this.items.push(parseListItem(match));
 			}
 		}
 	}
@@ -530,19 +445,28 @@ class IdSuggestModal extends SuggestModal<ListItem> {
 	getSuggestions(query: string): ListItem[] {
 		let q = query ? query : this.defaultQuery;
 		q = q.toLowerCase();
-		return this.items.filter((item) => 
+		return this.items.filter((item) =>
 			item.content.toLowerCase().includes(q) ||
 			item.id && item.id.toLowerCase().includes(q)
 		);
 	}
 
 	renderSuggestion(item: ListItem, el: HTMLElement): void {
-		el.createEl('div', { text: item.content + " #" + item.id });
+		el.createEl('div', { text: item.content + " #" + item.id + (item.study ? " + Note" : "") });
 		// el.createEl('small', { text: "show path here" });
 	}
 
-	onChooseSuggestion(item: ListItem, evt: MouseEvent | KeyboardEvent): void { 
-		this.callback(item.id ? item.id : "");
+	onChooseSuggestion(item: ListItem, evt: MouseEvent | KeyboardEvent): void {
+		this.callback(item);
 		this.close();
+	}
+}
+
+export class ErrorViewerModal extends Modal {
+	constructor(app: App, editor: Editor, noteList: NoteList) {
+		super(app);
+
+		this.setTitle("Errors");
+
 	}
 }

@@ -1,30 +1,21 @@
 import { FSRSParameters, Card, generatorParameters } from "ts-fsrs";
 
-export interface MapSettings {
-  title: string, 
-  separateHeadings: boolean;
-  crosslink: boolean;
-  studySettings: FSRSParameters;
-}
-
-export interface ListItem {
+export interface ListItem { // undifferentiated list item
+  level: number;
+  listNumber: number;
 	content: string;
-	type: 'key word' | 'relation' | 'info';
+	study: boolean;
 	id: string | undefined;
+  card: Card | undefined;
+  line: number | undefined;
+  indices: number[][] | undefined;
 }
 
-// export interface NoteProperties {
-//   path: string[]; // all parents
-//   study: boolean; // whether the node can be studied
-//   card: Card | null; // null if the node is not studyable
-// }
-
-export interface Note {
-  listNumber: number; // number in list. 0 if unordered list
-  content: string; // full content in markdown
-  type: 'key word' | 'relation' | 'info';
-  id: string | undefined; // "" if empty, null to force unlink
-  card: Card | null; // null if the node is not studyable
+// note to be included in the mind map
+// stores information about the note and its location in the document
+// passed to mind map view
+export interface Note extends ListItem {
+  
 }
 
 // stores content, index, and level of every instance of the same content
@@ -32,15 +23,21 @@ export interface Note {
 export interface NoteGroup {
 	content: string | undefined; // undefined if there is a conflict
 	id: string | undefined; // #<id> or #"" or blank
-	indices: number[]; // index in note library
-	levels: number[]; 
-	ref: number;
+  indices: number[]; // index in listItems[]
+	ref: number; // index of item in listItems[] to use as the reference
+}
+
+export interface NoteList {
+	listItems: ListItem[];
+  groups: NoteGroup[];
+	warnings: Warning[]; // list of types
 }
 
 export interface MindMap {
-  map: MapSettings; 
+  title: string;
+  studySettings: FSRSParameters; 
+  range: number[]; // 0-based index of start (inclusive) and end (exclusive) line 
   notes: Note[];
-  tree: number[][];
 }
 
 export interface Settings {
@@ -54,7 +51,7 @@ export interface MindMapLayout {
   yCoords: number[];
 }
 
-export enum Warning {
+export enum WarningType {
   EmptyLine, 
   Invalid, 
   DuplicateRelation, 
@@ -64,4 +61,9 @@ export enum Warning {
   ContentNotDefined, 
   ContentConflict, 
   StudyConflict
+}
+
+export interface Warning {
+  group: NoteGroup;
+  type: WarningType;
 }

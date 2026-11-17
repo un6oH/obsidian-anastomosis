@@ -1,10 +1,10 @@
 import { Editor, MarkdownView, Notice, Plugin, WorkspaceLeaf } from 'obsidian';
-import { createEmptyCard } from 'ts-fsrs';
 import { createMindMapEditorViewPlugin } from 'view-plugins/mind-map-editor-view-plugin';
 import { VIEW_TYPE_MIND_MAP, MindMapView } from 'views/mind-map-view';
-import { Settings, MindMapLayout, Warning, MapSettings, NoteGroup, MindMap, ListItem, Note } from 'types';
-import { mapTagRegex, parseListNumber, errorTagOpen, errorTagClose, mapTagOpen, mapTagClose, errorPattern, generateMapString, removeTags, noteRegex, parseNote, generateNoteString, parseListItem, listItemRegex, canStudy } from 'helpers';
-import { MindMapCreatorModal, StudyMindMapModal } from 'modals';
+import { Settings, MindMapLayout, Warning, NoteGroup, MindMap, ListItem, WarningType, NoteList } from 'types';
+import { errorTagOpen, errorTagClose, generateNoteString, parseListItem, listItemRegex, errorTagRegex } from 'helpers';
+import { MapSettingsEditorModal, MindMapCreatorModal } from 'modals';
+import { createMindMapWidgetStateField } from 'view-plugins/mind-map-widget-state-field';
 
 const DEFAULT_SETTINGS = {
 	layouts: [], 
@@ -26,24 +26,12 @@ export default class MindMapEditorPlugin extends Plugin {
 			}
 		});
 		
-		// 	const editor = activeView!.editor;35
-		this.registerEditorExtension([createMindMapEditorViewPlugin(this, () => this.checkNotes(), () => this.createCards(), (mindMapPos: number) => this.openStudyMindMapModal(null, mindMapPos))]);
-		// this.registerEditorExtension([mindMapTrees]);
+		this.registerEditorExtension([createMindMapEditorViewPlugin(this.app), createMindMapWidgetStateField(this.app, this.changeMapSettings, this.checkNotes, this.updateNotes, this.viewMindMap)]);
 
 		this.registerView(
 			VIEW_TYPE_MIND_MAP, 
 			(leaf) => new MindMapView(leaf)
 		);
-
-		const proofreadNotesStatusBarItem = this.addStatusBarItem();
-		proofreadNotesStatusBarItem.addClass('mod-clickable');
-		proofreadNotesStatusBarItem.textContent = "Check notes";
-		proofreadNotesStatusBarItem.onclick = () => {
-			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-			const library = processDocument(activeView!.editor);
-			addErrorTags(activeView!.editor, library);
-			// new ProofreadNotesModal(this.app, activeView!.editor, library.warningLines, library.warnings).open();
-		};
 
 		// Add a command to create a mindmap template
 		this.addCommand({
@@ -56,31 +44,7 @@ export default class MindMapEditorPlugin extends Plugin {
 			}
 		});
 
-		// Add a command to insert a mind map tag under the selected line
-		this.addCommand({
-			id: 'mindmapeditor-add-mind-map-tag', 
-			name: 'Add mind map tag', 
-			hotkeys: [{ modifiers: ['Ctrl', 'Shift'], key: 'm' }],
-			editorCallback: addMindMapTag
-		});
-
-		// analyses the selected map for nodes to add or update
-		// this.addCommand({
-		// 	id: 'mindmapeditor-update-notes', 
-		// 	name: 'Update notes', 
-		// 	hotkeys: [{ modifiers: ['Ctrl', 'Shift'], key: 'u' }],
-		// 	editorCallback: (editor: Editor) => {
-		// 		this.currentMindMapTitle = isMindMap(editor);
-		// 		if (this.currentMindMapTitle !== "") {
-		// 			new UpdateNotesModal(this.app, editor).open();
-		// 		} else {
-		// 			new Notice("This document is not a mind map!");
-		// 		}
-		// 	}
-		// });
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		this.addRibbonIcon('graph-star', 'Anastomosis: Open mind map viewer', () => this.openMindMapView());
 	}
 
 	async onunload() {
@@ -95,95 +59,89 @@ export default class MindMapEditorPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	getActiveView(): MarkdownView | null {
+	getActiveMarkdownView(): MarkdownView | null {
 		return this.app.workspace.getActiveViewOfType(MarkdownView);
 	}
 
-	getEditorView(view: MarkdownView) {
-		// @ts-expect-error, not typed
-		return view.editor.cm as EditorView; 
+	changeMapSettings(line: number, match: RegExpExecArray) {
+		const markdownView = this.getActiveMarkdownView();
+		if (!markdownView) {
+			console.log("No active MarkdownView");
+			return;
+		}
+		const editor = markdownView.editor;
+		new MapSettingsEditorModal(this.app, editor, match, line);
 	}
 
-	getMindMap(view: MarkdownView | null = null, mindMapPos: number): MindMap | null {
-		if (!view) {
-			view = this.getActiveView();
-			if (!view) {
-				console.log("getMindMap(): Could not get MarkdownView");
-				return null;
-			}
+	checkNotes(start: number, end: number) {
+		const markdownView = this.getActiveMarkdownView();
+		if (!markdownView) {
+			console.log("No active MarkdownView");
+			return;
 		}
-
-		
-
-		return null;
+		const editor = markdownView.editor;
+		// checkNotes(editor, start, end);
 	}
 
-	checkNotes(view: MarkdownView | null = null): boolean {
-		if (!view) {
-			view = this.getActiveView();
-			if (!view || !view.editor) {
-				new Notice("No editor");
-				return false;
-			}
+	updateNotes(start: number, end: number) {
+		const markdownView = this.getActiveMarkdownView();
+		if (!markdownView) {
+			console.log("No active MarkdownView");
+			return;
 		}
-
-		const library = processDocument(view.editor.getDoc());
-		if (library.warningLines.length != 0) {
-			new Notice("Unresolved warnings - fix notes");
-			addErrorTags(view.editor, library);
-			return false;
-		} else {
-			new Notice("No errors");
-			dismissWarnings(view.editor)
-			return true;
-		}
-	}
-
-	createCards(view: MarkdownView | null = null) {
-		if (!view) {
-			view = this.getActiveView();
-			if (!view || !view.editor) {
-				new Notice("No editor");
-				return false;
-			}
-		}
-		
-		createCards(view.editor);
-	}
-
-	openStudyMindMapModal(view: MarkdownView | null = null, mindMapPos: number) {
-		if (!view) {
-			view = this.getActiveView();
-			if (!view || !view.editor) {
-				new Notice("No editor");
-				return;
-			}
-		}
-
+		const editor = markdownView.editor;
 		// check notes
-		if (!this.checkNotes(view)) {
-			console.log("openStudyMindMapModal(): Error on check notes");
-			return;
-		}
-
-		const mindMap = this.getMindMap(view, mindMapPos);
-		if (!mindMap) {
-			console.log("openStudyMindMapModal(): Error on get mind map");
-			return;
-		}
-
-		// console.log(mindMap);
-		new StudyMindMapModal(this, view.editor, mindMap).open();
+		// open modal to fix errors
+		// updateNotes(editor, start, end);
+		
 	}
-}
 
-export function updateMapSettings(editor: Editor, settings: MapSettings) {
-	const text = editor.getLine(1);
-	editor.replaceRange(
-		generateMapString(settings), 
-		{ line: 1, ch: 0 },
-		{ line: 1, ch: text.length },
-	)
+	viewMindMap(start: number, end: number) {
+		const markdownView = this.getActiveMarkdownView();
+		if (!markdownView) {
+			console.log("No active MarkdownView");
+			return;
+		}
+		const editor = markdownView.editor;
+		// checkNotes(editor, start, end);
+	}
+
+	async openMindMapView(mindMap?: MindMap) {
+		const filePath = this.app.workspace.activeEditor?.file?.path!;
+		// console.log(filePath);
+		let layoutIndex = this.settings.layouts.findIndex((layout) => layout.path === filePath);
+		const layout: MindMapLayout = {
+			path: filePath, 
+			ids: layoutIndex != -1 ? this.settings.layouts[layoutIndex].ids : [],
+			xCoords: layoutIndex != -1 ? this.settings.layouts[layoutIndex].xCoords : [],
+			yCoords: layoutIndex != -1 ? this.settings.layouts[layoutIndex].yCoords : [], 
+		}
+
+		const workspace = this.app.workspace;
+
+		let leaf: WorkspaceLeaf | null = null;
+		const leaves = workspace.getLeavesOfType(VIEW_TYPE_MIND_MAP);
+
+		if (leaves.length > 0) {
+			// A leaf with our view already exists, use that
+			console.log("studyMindMap() leaf with view exists");
+			leaf = leaves[0];
+		} else {
+			// Our view could not be found in the workspace, create a new leaf
+			console.log("studyMindMap() leaf with view does not exist");
+			leaf = workspace.getLeaf('window');
+			await leaf.setViewState({ type: VIEW_TYPE_MIND_MAP, active: true });
+		}
+
+		// "Reveal" the leaf in case it is in a collapsed sidebar
+		await workspace.revealLeaf(leaf);
+		const view = leaf.view as MindMapView;
+		
+		if (mindMap) {
+			console.log(mindMap);
+			await view.loadGraph(mindMap, layout, () => {}, (layout: MindMapLayout) => saveLayout(this, layout));
+		}
+	}
 }
 
 export async function openMindMapView(plugin: MindMapEditorPlugin, editor: Editor, mindMap: MindMap) {
@@ -217,73 +175,45 @@ export async function openMindMapView(plugin: MindMapEditorPlugin, editor: Edito
 	console.log(mindMap);
 	await workspace.revealLeaf(leaf);
 	const view = leaf.view as MindMapView;
-	await view.loadGraph(mindMap, layout, () => updateNote(editor), (layout: MindMapLayout) => saveLayout(plugin, layout));
+	await view.loadGraph(mindMap, layout, () => {}, (layout: MindMapLayout) => saveLayout(plugin, layout));
 }
 
-interface NoteList {
-	listNumbers: number[]; 
-	listItems: ListItem[];
-	lines: number[]; // line number of each note
-	levels: number[]; // indent level of each note
-  groups: NoteGroup[];
-	warningLines: number[]; // list of line numbers
-	warnings: Warning[]; // list of types
-}
-
-function processDocument(doc: Editor): NoteList {
-	// note library properties
-	// ensure every valid note is pushed
-	const listNumbers: number[] = [];
-	const items: ListItem[] = [];
-	const lines: number[] = [];
-	const levels: number[] = [];
-	// only some notes
+// input: editor, start line, end line (end of doc or )
+// output list of items within range of the mind map tag
+function getListItems(editor: Editor, start: number, end: number): NoteList {
+	const listItems: ListItem[] = [];
   const groups: NoteGroup[] = [];
-	const warningLines: number[] = []; // lines with associated warning
-	const warnings: Warning[] = []; // type of warning
+	const warnings: Warning[] = [];
+	const createGroup = (item: ListItem, index: number) => {
+		groups.push({
+			content: item.content, 
+			id: item.id,
+			indices: [index],
+			ref: index,
+		});
+	};
+	for (let l = start + 1; l < end; l++) {
+		const line = editor.getLine(l);
+		const match = listItemRegex.exec(line);
+		if (!match) continue;
+		
+		const item = parseListItem(match);
+		item.line = l;
+		item.indices = (match as any).indices;
+		listItems.push(item);
 
-	const listRegex = RegExp("^(\\t*)(\\d+\\. |- )(.+)"); // finds lines with a list delimiter and content
+		// grouping by id
+		if (item.id === "" || (!item.study && !item.id)) continue;
 
-	// line-by-line
-	for (let l = 0; l < doc.lineCount(); l++) {
-		const line = doc.getLine(l);
-		const match = listRegex.exec(line);
-
-		// no list item or list item is blank
-		if (!match || match[3].trim() === "") continue;
-
-		// extract list number, content and id
-		let listNumber = parseListNumber(match[2]);
-		listNumbers.push(listNumber);
-		let text = removeTags(match[3]);
-		let item = parseListItem(text);
-		const index = items.push(item) - 1;
-		lines.push(l);
-
-		const level = match[1].length;
-		levels.push(level);
-
-		// note is marked with # or is a relation with no specified id; ignore note groups
-		if (item.id === "" || // force unlink
-				item.id === undefined && item.type === "relation" || // relation
-				item.type === "info") // info
-			continue; 
-
-		// creating groups
+		const index = listItems.length - 1;
 		const content = item.content.toLowerCase();
-		if (item.id !== undefined) { // all notes with an info.id tag get linked
+		
+		if (item.id !== undefined) { // all notes with an id tag get linked
 			const groupIndex = groups.findIndex((group) => group.id === item.id);
 
 			// no matching id
 			if (groupIndex == -1) { 
-				// create a new group
-				groups.push({
-					content, 
-					id: item.id, 
-					indices: [index], 
-					levels: [level], 
-					ref: index,
-				});
+				createGroup(item, index);
 			} else {
 				// check if there is a content conflict
 				if (content) {
@@ -297,240 +227,163 @@ function processDocument(doc: Editor): NoteList {
 					} // leave undefined as there is a conflict
 				}
 				groups[groupIndex].indices.push(index);
-				groups[groupIndex].levels.push(level);
 			}
 		} else {
 			// find group with the same content and is accepting more members
 			const groupIndex = groups.findIndex((group) => group.id === undefined && group.content! === content);
 			if (groupIndex == -1) { // no valid groups found
-				// create a group
-				groups.push({
-					content, 
-					id: item.id, 
-					indices: [index], 
-					levels: [level], 
-					ref: index,
-				});
+				createGroup(item, index);
 			} else {
 				groups[groupIndex].indices.push(index);
-				groups[groupIndex].levels.push(level);
 			}
 		}
 	}
 
 	// reprocess groups
-	for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
-		const group = groups[groupIndex];
-
+	groups.forEach((group, g) => {
 		if (group.indices.length == 1) {
 			// check if the group does not have a label
 			if (group.content === "") { 
-				warningLines.push(lines[group.indices[0]]);
-				warnings.push(Warning.ContentNotDefined);
+				warnings.push({ 
+					group,
+					type: WarningType.ContentNotDefined
+				});
 			}
 			// don't need reprocessing for single-member groups
-			continue;
+			return;
 		}
 
 		// check if multiple notes have children
 		let parents: number[] = [];
-		for (let i = 0; i < group.indices.length; i++) {
-			const index = group.indices[i];
-			const level = group.levels[i];
-			if (levels[index + 1] > level || 
-					levels[index + 1] == level && listNumbers[index + 1] == listNumbers[index] + 1) {
+		group.indices.forEach(index => {
+			const item = listItems[index];
+			const itemBelow = listItems[index + 1];
+			if (!itemBelow) return;
+			if (itemBelow.level > item.level || 
+					itemBelow.level == item.level && itemBelow.listNumber == item.listNumber + 1) {
 				parents.push(index);
-				groups[groupIndex].ref = index;
+				groups[g].ref = index;
 			}
-		}
+		});
 		// multiple nodes with children
-		// need to resolve due to ambiguity for other nodes
+		// need to resolve due to ambiguity
 		if (parents.length > 1) { 
-			group.indices.forEach((index) => {
-				warningLines.push(lines[index]);
-				warnings.push(Warning.LinkConflict);
+			warnings.push({
+				group, 
+				type: WarningType.LinkConflict
 			});
-			continue;
+			return;
 		}
 
 		if (group.id) { // id defined; check for content errors
-			let warning: Warning | null = null;
+			let warningType: WarningType | undefined;
 			if (group.content === "") {
-				warning = Warning.ContentNotDefined;
+				warningType = WarningType.ContentNotDefined;
 			} else if (group.content == undefined) {
-				warning = Warning.ContentConflict;
+				warningType = WarningType.ContentConflict;
 			}
-			if (warning) {
-				group.indices.forEach((index) => {
-					warningLines.push(lines[index]);
-					warnings.push(warning);
+			if (warningType) {
+				warnings.push({
+					group,
+					type: warningType
 				});
 			}
-		} else { // assign id to content group
+		} else { // assign id to content group and make sure notes have content
 			let newId = group.content!.replace(/[^a-zA-Z0-9]/g, '');
 			// console.log("processNotes() assigning")
-			if (groups.findIndex((group) => group.id === newId) != -1) { // id is taken
+			if (groups.findIndex(group => group.id === newId) != -1) { // id is taken
 				let suffix = 1;
-				while(groups.findIndex((group) => group.id === newId + suffix) != -1) suffix++; // add a valid copy number
-				groups[groupIndex].id = newId + suffix;
+				while(groups.findIndex(group => group.id === newId + suffix) != -1) suffix++; // add a valid copy number
+				group.id = newId + suffix;
 			} else {
-				groups[groupIndex].id = newId;
+				group.id = newId;
 			}
-			group.indices.forEach((index) => items[index].id = newId);
+			group.indices.forEach(index => {
+				listItems[index].id = newId;
+				listItems[index].content = listItems[group.ref].content;
+			});
 		}
-	}
+	});
 
-	return {listNumbers, listItems: items, lines, levels, groups, warningLines, warnings};
+	return {listItems, groups, warnings};
 }
 
-function addErrorTags(editor: Editor, library: NoteList) {
-	dismissWarnings(editor);
+function addErrorTags(editor: Editor, noteList: NoteList, start: number, end: number) {
+	new Notice(`${noteList.warnings.length} error(s) found.`);
 
-	new Notice(`${library.warningLines.length} error(s) found.`);
-
-	for (let i = 0; i < library.warningLines.length; i++) {
-		const warning = library.warnings[i];
-		const lineNumber = library.warningLines[i];
-		const text = editor.getLine(lineNumber);
-		editor.replaceRange(
-			`${errorTagOpen}${warning}${errorTagClose}`, 
-			{ line: lineNumber, ch: text.length }
-		);
-		
-	}
+	noteList.warnings.forEach(warning => {
+		const { group, type } = warning;
+		group.indices.map(i => noteList.listItems[i].line!).forEach(line => {
+			const text = editor.getLine(line);
+			editor.replaceRange(
+				`${errorTagOpen}${type}${errorTagClose}`, 
+				{ line, ch: text.length }
+			);
+		});
+	});
 }
 
-export function dismissWarnings(editor: Editor) {
+export function dismissWarnings(editor: Editor, start: number, end: number) {
 	const doc = editor.getDoc();
-	const lineCount = doc.lineCount();
-	const errorTagRegex = RegExp(errorPattern, 'd')
-	for (let l = lineCount - 1; l >= 0; l--) {
+
+	for (let l = start + 1; l < end; l++) {
 		const line = doc.getLine(l);
 		const match = errorTagRegex.exec(line);
 
 		if (!match) continue;
 
 		const indices: number[][] = (match as any).indices;
-		const start = indices[1][0];
-		const end = indices[1][1];
+		const from = indices[1][0];
+		const to = indices[1][1];
 
 		editor.replaceRange(
 			"", 
-			{ line: l, ch: start },
-			{ line: l, ch: end }
+			{ line: l, ch: from },
+			{ line: l, ch: to }
 		);
 	}
-
-	// console.log("dismissWarnings(): Dismissed all warnings");
 }
 
-export function createCards(editor: Editor) {
+function checkNotes(editor: Editor, start: number, end: number) {
+	dismissWarnings(editor, start, end);
+
+
+
+	
+}
+
+export function updateNotes(editor: Editor, noteList: NoteList, start: number, end: number) {
 	new Notice("Creating cards... (this may take a few seconds)");
-	const doc = editor.getDoc();
-	const noteList = processDocument(doc);
-	if (noteList.warningLines.length != 0) {
-		new Notice("Unresolved warnings - fix notes");
-		console.log(noteList.warnings);
-		addErrorTags(editor, noteList);
-		return;
-	}
 
 	// update the props tag for each note
-	for (let i = 0; i < noteList.lines.length; i++) {
-		const item = noteList.listItems[i];
-		const lineNumber = noteList.lines[i];
-		// const path = paths[i];
-		const line = doc.getLine(lineNumber);
-		
-		const noteMatch = noteRegex.exec(line);
-		if (noteMatch) { // note has card tag
-			const note = parseNote(noteMatch);
-			// replace id or remove card
-			let replace = false;
-			if (note.id !== item.id) {
-				replace = true;
-				note.id = item.id;
-			}
-			if (!canStudy(note.content, note.type)) {
-				replace = true;
-				note.card = null;
-			}
-			if (replace) {
-				const indices = (noteMatch as any).indices;
-				const start = indices[3][0]; // start of content
-				const end = indices[0][1]; // end of line	
-				note.id = item.id;
-				editor.replaceRange(
-					generateNoteString(note), 
-					{ line: lineNumber, ch: start },
-					{ line: lineNumber, ch: end }
-				);
-			}
-		} else { // note does not have card tag
-			const listItemMatch = listItemRegex.exec(line);
-			if (!listItemMatch) continue;
-			const { content, id, type } = parseListItem(listItemMatch[3]);
-			const note: Note = { listNumber: 0, content, id, type, card: null };
-			// replace id or add card
-			let replace = false;
-			if (id !== item.id) {
-				replace = true;
-			  note.id = item.id;
-			}
-			if (canStudy(note.content, note.type)) {
-				replace = true;
-				note.card = createEmptyCard();
-			}
-			if (replace) {
-				const indices = (listItemMatch as any).indices;
-				const start = indices[3][0] // start of content
-				const end = indices[0][1]; // end of line	
-				editor.replaceRange(
-					generateNoteString(note), 
-					{ line: lineNumber, ch: start },
-					{ line: lineNumber, ch: end }
-				);
-			}
+	
+	for (let newItem of noteList.listItems) {
+		const line = newItem.line!;
+		const text = editor.getLine(line);
+
+		const match = listItemRegex.exec(text);
+		if (!match) {
+			console.log("No list item at line", line);
+			continue;
+		}
+		const oldItem = parseListItem(match);
+		if (oldItem.content !== newItem.content ||
+				oldItem.id !== newItem.id ||
+				oldItem.study !== newItem.study
+		) {
+			const indices = (match as any).indices;
+			const start = indices[3][0]; // start of content
+			const end = indices[0][1]; // end of line	
+			editor.replaceRange(
+				generateNoteString(newItem), 
+				{ line: line, ch: start },
+				{ line: line, ch: end }
+			);
 		}
 	}
 
 	console.log(`updateNotes(): updated ${noteList.listItems.length} notes`);
 	new Notice(`Updated ${noteList.listItems.length} notes`);
-}
-
-export function isMindMap(editor: Editor): string { // returns map title if map setup tags exist
-	let title = "";
-	const titleMatch = /^# (.*)$/m.exec(editor.getLine(0));
-	if (titleMatch) {
-		title = titleMatch[1];
-	}
-	if (title === "") { 
-		console.log("isMindMap(): title not found");
-		return "";
-	}
-
-	const tagMatch = mapTagRegex.exec(editor.getLine(1));
-	if (tagMatch) {
-		// console.log("isMindMap() mind map identified:", title);
-		return title;
-	} else {
-		// console.log("isMindMap() tag not found");
-		return "";
-	}
-}
-
-export function addMindMapTag(editor: Editor) {
-	const tag = `${mapTagOpen}Untitled;false;true;false;true;36500;0.9;0.40255,1.18385,3.173,15.69105,7.1949,0.5345,1.4604,0.0046,1.54575,0.1192,1.01925,1.9395,0.11,0.29605,2.2698,0.2315,2.9898,0.51655,0.6621${mapTagClose}`;
-	const cursor = editor.getCursor();
-	const from = {
-		line: cursor.line, 
-		ch: editor.getLine(cursor.line).length
-	} 
-	editor.replaceRange(tag, from);
-}
-
-async function updateNote(editor: Editor) {
-	
 }
 
 async function saveLayout(plugin: MindMapEditorPlugin, layout: MindMapLayout) {
