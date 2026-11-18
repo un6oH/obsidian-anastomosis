@@ -40,7 +40,6 @@ If your plugin does not need CSS, delete this file.
   width: calc(1cap + 2px);
   height: calc(1cap + 2px);
   vertical-align: -0.0em;
-  margin-right: 0.25em;
 }
 
 .widget-note {
@@ -50,6 +49,10 @@ If your plugin does not need CSS, delete this file.
   cursor: var(--cursor-link);
   margin-left: 0.5em;
   opacity: 100%;
+}
+
+.widget-note .label-content {
+  margin-left: 0.25em;
 }
 
 .widget-note:hover {
@@ -151,9 +154,9 @@ If your plugin does not need CSS, delete this file.
   line-height: 100%;
 }
 
-.label-content {
+/* .label-content {
 
-}
+} */
 
 .label-content .fragment-revealed {
   color: lightblue;
@@ -169,9 +172,9 @@ If your plugin does not need CSS, delete this file.
   color: var(--link-color);
 }
 
-.label-hidden {
+/* .label-hidden {
   
-}
+} */
 
 .label-hidden .fragment-hidden {
   white-space: pre;

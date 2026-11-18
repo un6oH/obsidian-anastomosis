@@ -2,7 +2,7 @@ import { EditorView } from '@codemirror/view';
 import { App, ButtonComponent, Editor, Modal, Notice, Setting, SuggestModal, TextComponent, ToggleComponent } from 'obsidian';
 import { createEmptyCard, generatorParameters, State } from 'ts-fsrs';
 import { ListItem, MindMap, Note, NoteList } from './types';
-import { parseNumberArray, parseMapTag, generateMapString, parseListItem, canStudy, generateNoteString, cardTagOpen, cardTagClose } from './helpers';
+import { parseNumberArray, parseMapTag, generateMapString, parseListItem, canStudy, generateNoteString, cardTagOpen, cardTagClose, parseNote } from './helpers';
 import MindMapEditorPlugin from './main';
 
 export class MindMapCreatorModal extends Modal {
@@ -11,7 +11,7 @@ export class MindMapCreatorModal extends Modal {
 
 		this.setTitle("Create a mind map");
 		const map: MindMap = {
-			title: title ? title : "My mind map",
+			title: title ? title : "Untitled",
 			// separateHeadings: false, 
 			// crosslink: true, 
 			studySettings: generatorParameters(),
@@ -22,7 +22,7 @@ export class MindMapCreatorModal extends Modal {
 		new Setting(this.contentEl)
 			.setName("Title")
 			.addText((text) => text
-				.setPlaceholder(map.title)
+				.setValue(title)
 				.onChange((value) => {
 					map.title = value;
 				}));
@@ -143,19 +143,8 @@ export class ViewMindMapModal extends Modal {
 
 export class MapSettingsEditorModal extends Modal {
 	// start and end of tag
-	constructor(app: App, editor: Editor, match: RegExpExecArray, line: number) {
-		// console.log("Created map study settings editor modal", "start:", start, "end:", end);
+	constructor(app: App, editor: Editor, mindMap: MindMap, indices: number[][], line: number) {
 		super(app);
-		const mindMap = parseMapTag(match[0]);
-		if (!mindMap) {
-			new Notice("Mind map is not propoerly defined.");
-			console.log("MapSettingsEditorModal(): mind map is improperly defined.");
-			this.close();
-			return;
-		}
-		const indices = (match as any).indices;
-
-		// parse data string
 		this.setTitle("Mind Map Settings");
 
 		new Setting(this.contentEl)
@@ -219,11 +208,10 @@ export class MapSettingsEditorModal extends Modal {
 
 // Called from note widget. Specifies start and end indices of text within widget
 export class NoteEditorModal extends Modal {
-	constructor(app: App, view: EditorView, listItemMatch: RegExpExecArray) {
+	constructor(app: App, view: EditorView, note: Note, noteMatch: RegExpExecArray, indices: number[][]) {
 		super(app);
-		const note = parseListItem(listItemMatch);
 		const card = note.card!;
-		const initial = parseListItem(listItemMatch);
+		const newNote = parseNote(noteMatch);
 
 		let contentField: TextComponent;
 		let unlinkToggle: ToggleComponent;
@@ -245,18 +233,18 @@ export class NoteEditorModal extends Modal {
 			// .setDesc("Warning: changing content may disconnect linked notes")
 			.addText((text) =>
 				contentField = text
-					.setPlaceholder(initial.content)
+					.setPlaceholder(note.content)
 					.setValue(note.content)
 					.onChange((value) => {
 						const content = value.trim();
 						if (content === "") {
 							applyChangesButton.setDisabled(note.id ? true : false);
-							note.content = "";
+							newNote.content = "";
 						} else {
 							const study = canStudy(content);
 							studyToggle.setValue(study);
 							applyChangesButton.setDisabled(false);
-							note.content = content;
+							newNote.content = content;
 						}
 					}
 					))
@@ -265,9 +253,9 @@ export class NoteEditorModal extends Modal {
 					.setButtonText("Reset")
 					.setCta()
 					.onClick(() => {
-						contentField.setValue(initial.content);
-						note.content = initial.content;
-						studyToggle.setValue(initial.study);
+						contentField.setValue(note.content);
+						newNote.content = note.content;
+						studyToggle.setValue(note.study);
 						// update the path display
 						// update the card display
 					})
@@ -281,11 +269,11 @@ export class NoteEditorModal extends Modal {
 					.setValue(note.id === "") // blank # means force unlink
 					.onChange((unlink) => {
 						if (unlink) {
-							note.id = "";
+							newNote.id = "";
 							idField.setPlaceholder("linking disabled").setValue("");
 						} else {
-							note.id = initial.id ? initial.id : undefined;
-							let newText = initial.id ? initial.id : "";
+							newNote.id = note.id ? note.id : undefined;
+							let newText = note.id ? note.id : "";
 							idField.setPlaceholder(newText).setValue(newText);
 						}
 						idField.setDisabled(unlink);
@@ -304,13 +292,13 @@ export class NoteEditorModal extends Modal {
 						let validId = value.replace(/[^a-zA-Z0-9]/, '');
 						idField.setValue(validId);
 						if (validId === "") {
-							note.id = undefined;
+							newNote.id = undefined;
 							if (note.content === "") {
 								applyChangesButton.setDisabled(true);
 							}
 						} else {
 							applyChangesButton.setDisabled(false);
-							note.id = validId;
+							newNote.id = validId;
 						}
 					})
 			)
@@ -319,19 +307,19 @@ export class NoteEditorModal extends Modal {
 				.setCta()
 				.onClick(() => {
 					idField.setValue("");
-					note.id = undefined;
+					newNote.id = undefined;
 				})
 			)
 			.addButton((button) => button
 				.setButtonText("Search")
 				.setCta()
 				.onClick(() => {
-					new IdSuggestModal(app, view, note.content, (referenceNote: Note) => {
-						note.id = referenceNote.id!;
-						unlinkToggle.setValue(false);
-						idField.setValue(note.id);
-						// 
-					}).open();
+					new IdSuggestModal(app, view, note.content, 
+						(referenceNote: Note) => {
+							unlinkToggle.setValue(false);
+							idField.setValue(referenceNote.id!);
+						}
+					).open();
 				})
 			);
 
@@ -342,9 +330,9 @@ export class NoteEditorModal extends Modal {
 				studyToggle = toggle
 					.setValue(note.card ? true : false)
 					.onChange((study) => {
-						note.study = study;
+						newNote.study = study;
 						if (study) {
-							note.card = initial.card ? initial.card : createEmptyCard();
+							note.card = note.card ? note.card : createEmptyCard();
 							studySetting.setDesc("");
 							applyChangesButton.setButtonText("Apply changes");
 							unlockCardSettings();
@@ -392,7 +380,6 @@ export class NoteEditorModal extends Modal {
 			dueDateSetting.setDisabled(true);
 		}
 
-		const indices = (listItemMatch as any).indices;
 		new Setting(this.contentEl)
 			.addButton(btn =>
 				btn
@@ -406,7 +393,7 @@ export class NoteEditorModal extends Modal {
 					.setCta()
 					.onClick(() => {
 						this.close();
-						this.updateData(view, indices, note);
+						this.updateData(view, indices, newNote);
 					})
 			);
 		return;

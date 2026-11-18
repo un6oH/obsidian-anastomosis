@@ -44,13 +44,13 @@ export function createMindMapEditorViewPlugin(app: App) {
             let noteMatch = noteRegex.exec(line.text);
             if (noteMatch) {
               let indices = (noteMatch as any).indices;
-              indices = indices.map((pair: number[]) => pair ? [pair[0] + from, pair[1] + from] : undefined);
+              indices = indices.map((pair: number[]) => pair ? [pair[0] + line.from, pair[1] + line.from] : undefined);
 
               const start = indices[6][0] - cardTagOpen.length;
               const end = indices[6][1] + cardTagClose.length;
 
               const deco = Decoration.replace({
-                widget: new NoteDataWidget(app, noteMatch),
+                widget: new NoteDataWidget(app, noteMatch, indices),
                 inclusive: false
               });
               decorations.push({ start, end, deco });

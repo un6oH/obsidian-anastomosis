@@ -49,18 +49,18 @@ export function parseNumberArray(array: string): number[] {
 export function parseMapTag(text: string): MindMap | null {
 	const parameters = text.trim().split(';');
 	if (parameters.length < 7) {
-		console.log("parseMapTag() tag does not contain all parameters.");
+		console.log("parseMapTag() tag does not contain all parameters.", parameters);
 		return null;
 	}
 
 	const maximum_interval = parseFloat(parameters[3]);
 	if (isNaN(maximum_interval)) {
-		console.log("parseMapTag() maximum interval not defined.");
+		console.log("parseMapTag() maximum interval not defined.", parameters);
 		return null;
 	}
 	const request_retention = parseFloat(parameters[4]);
 	if (isNaN(request_retention)) {
-		console.log("parseMapTag() target retention not defined.");
+		console.log("parseMapTag() target retention not defined.", parameters);
 		return null;
 	}
 
@@ -135,7 +135,7 @@ export function parseListNumber(str: string): number {
 export function parseCard(tag: string): Card | undefined {
 	const props = tag.split(';');
 	if (props.length < 9 || props.some((value, i) => value === "" && i != 8)) {
-		console.log("parseCard(): card does not contain all parameters.");
+		console.log("parseCard(): card does not contain all parameters.", tag);
 		return undefined;
 	}
 
@@ -173,26 +173,23 @@ export function toNoteID(str: string, title: boolean = false): string {
 
 export function generateCardString(card: Card, includeTags = true): string {
 	let tag = includeTags ? cardTagOpen : "";
-	if (card !== null) {
-		const data = [
-			card.due.toISOString(),
-			card.stability.toString(),
-			card.difficulty.toString(),
-			card.elapsed_days.toString(),
-			card.scheduled_days.toString(),
-			card.reps.toString(),
-			card.lapses.toString(),
-			card.state.toString(), 
-			card.last_review ? card.last_review.toISOString() : ""
-		];
-		data.forEach(str => tag += str + ';');
-	}
+	const data = [
+		card.due.toISOString(),
+		card.stability.toString(),
+		card.difficulty.toString(),
+		card.elapsed_days.toString(),
+		card.scheduled_days.toString(),
+		card.reps.toString(),
+		card.lapses.toString(),
+		card.state.toString(), 
+		card.last_review ? card.last_review.toISOString() : ""
+	];
+	data.forEach((str, i) => tag += str + (i < 8 ? ';' : ""));
 	tag += includeTags ? cardTagClose : "";
 	return tag;
 }
 
 export function generateNoteString(note: Note): string {
-	// let str = note.listNumber == 0 ? "- " : `${note.listNumber}. `;
 	let str = note.content;
 	if (note.id !== undefined) {
 		str += " #" + note.id;
@@ -212,6 +209,7 @@ export function generateMapString(mindMap: MindMap, includeTags = true): string 
 		mindMap.studySettings.maximum_interval.toString(),
 		mindMap.studySettings.request_retention.toString(), 
 		mindMap.studySettings.w.join(','), 
+		"",
 	];
 	let string = propStrings.join(';') 
 
@@ -227,7 +225,7 @@ interface TextFragment {
 	image: boolean;
 	fragments: TextFragment[], 
 }
-export function formatContent(document: Document, text: string, viewImageCallback: (url: string) => void): { content: Element, hidden: Element } {
+export function formatContent(document: Document, text: string, viewImageCallback: (url: string) => void): { content: HTMLElement, hidden: HTMLElement } {
 	const fragments: TextFragment[] = [];
 	let infoMatch = infoRegex.exec(text);
 	if (infoMatch) { // - (lorem ipsum) %%card%%

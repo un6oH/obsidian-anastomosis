@@ -49,22 +49,22 @@ export class MapMenuWidget extends WidgetType {
   app: App;
   match: RegExpExecArray;
   // editor callbacks
-  changeMapSettingsButtonhandler: () => void;
+  changeMapSettingsButtonHandler: () => void;
   checkNotesButtonHandler:  () => void;
   updateNotesButtonHandler: () => void;
   viewMindMapButtonHandler: () => void;
   constructor(
     app: App, 
     match: RegExpExecArray, 
-    changeMapSettingsButtonhandler: () => void, 
-    checkNotesButtonHandler: () => void, // function with 
+    changeMapSettingsButtonHandler: () => void, 
+    checkNotesButtonHandler: () => void,
     updateNotesButtonHandler: () => void,
     viewMindMapButtonHandler: () => void
   ) {
     super();
     this.app = app;
     this.match = match;
-    this.changeMapSettingsButtonhandler = changeMapSettingsButtonhandler;
+    this.changeMapSettingsButtonHandler = changeMapSettingsButtonHandler;
     this.checkNotesButtonHandler = checkNotesButtonHandler;
     this.updateNotesButtonHandler = updateNotesButtonHandler;
     this.viewMindMapButtonHandler = viewMindMapButtonHandler;
@@ -73,9 +73,8 @@ export class MapMenuWidget extends WidgetType {
   toDOM(view: EditorView) {
     const menu = document.createElement('div');
     menu.addClass("widget-map-menu");
-    menu.append(createButton("Settings", "widget-map-settings-button", this.changeMapSettingsButtonhandler));
-    menu.append(createButton("Check Notes", "widget-map-check-notes-button", this.checkNotesButtonHandler));
-    menu.append(createButton("Update Cards", "widget-map-update-cards-button", this.updateNotesButtonHandler));
+    menu.append(createButton("Settings", "widget-map-settings-button", this.changeMapSettingsButtonHandler));
+    menu.append(createButton("Update Notes", "widget-map-update-cards-button", this.updateNotesButtonHandler));
     menu.append(createButton("View Mind Map", "widget-map-open-button", this.viewMindMapButtonHandler));
     return menu;
   }
@@ -85,13 +84,15 @@ export class NoteDataWidget extends WidgetType {
   app: App = {} as App;
   match: RegExpExecArray;
   note: Note;
+  indices: number[][];
 
   // match: ExecArray from noteRegex
-  constructor(app: App, match: RegExpExecArray) {
+  constructor(app: App, match: RegExpExecArray, indices: number[][]) {
     super();
     this.app = app;
     this.match = match;
     this.note = parseNote(match);
+    this.indices = indices;
   }
 
   toDOM(view: EditorView) {
@@ -105,24 +106,24 @@ export class NoteDataWidget extends WidgetType {
     const circle = document.createElementNS("http://www.w3.org/2000/svg", 'circle');
     circle.setAttributeNS(null, "cx", "12");
     circle.setAttributeNS(null, "cy", "12");
-    circle.setAttributeNS(null, "r", this.note.card ? "12" : "6");
+    circle.setAttributeNS(null, "r", "12");
     circle.setAttributeNS(null, "fill", colour(this.note.level));
     icon.appendChild(circle);
     // inner circle / status indicator
-    if (this.note.card) {
-      const innerCircle = document.createElementNS("http://www.w3.org/2000/svg", 'circle');
-      innerCircle.setAttributeNS(null, "cx", "12");
-      innerCircle.setAttributeNS(null, "cy", "12");
-      innerCircle.setAttributeNS(null, "r", "8");
-      innerCircle.setAttributeNS(null, "fill", cardStateColours[this.note.card.state]);
-      icon.appendChild(innerCircle);
-    }
+    const innerCircle = document.createElementNS("http://www.w3.org/2000/svg", 'circle');
+    innerCircle.setAttributeNS(null, "cx", "12");
+    innerCircle.setAttributeNS(null, "cy", "12");
+    innerCircle.setAttributeNS(null, "r", "8");
+    innerCircle.setAttributeNS(null, "fill", cardStateColours[this.note.card!.state]);
+    icon.appendChild(innerCircle);
 
     const block = document.createElement('span');
     block.addClass('widget-note');
 
     block.appendChild(icon);
-    block.appendChild(formatContent(document, this.note.content, () => {}).content);
+    const content = formatContent(document, this.note.content, () => {}).content;
+    // block.appendChild(formatContent(document, this.note.content, () => {}).content);
+    block.appendChild(content);
     if (this.note.id !== undefined && !this.note.content) {
       const tag = document.createElement('span');
       tag.addClass('cm-hashtag');
@@ -132,8 +133,16 @@ export class NoteDataWidget extends WidgetType {
       block.appendText(")");
     }
 
+    content.hide();
+    block.onmouseover = () => {
+      content.show();
+    }
+    block.onmouseleave = () => {
+      content.hide();
+    }
+
     block.onclick = () => {
-      new NoteEditorModal(this.app, view, this.match).open();
+      new NoteEditorModal(this.app, view, this.note, this.match, this.indices).open();
     };
 
     return block;

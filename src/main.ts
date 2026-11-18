@@ -2,9 +2,10 @@ import { Editor, MarkdownView, Notice, Plugin, WorkspaceLeaf } from 'obsidian';
 import { createMindMapEditorViewPlugin } from './mind-map-editor-view-plugin';
 import { VIEW_TYPE_MIND_MAP, MindMapView } from './mind-map-view';
 import { Settings, MindMapLayout, Warning, NoteGroup, MindMap, ListItem, WarningType, NoteList } from './types';
-import { errorTagOpen, errorTagClose, generateNoteString, parseListItem, listItemRegex, errorTagRegex } from './helpers';
+import { errorTagOpen, errorTagClose, generateNoteString, parseListItem, listItemRegex, errorTagRegex, parseMapTag, generateCardString } from './helpers';
 import { MapSettingsEditorModal, MindMapCreatorModal } from './modals';
 import { createMindMapWidgetStateField } from './mind-map-widget-state-field';
+import { createEmptyCard } from 'ts-fsrs';
 
 const DEFAULT_SETTINGS = {
 	layouts: [], 
@@ -26,7 +27,16 @@ export default class MindMapEditorPlugin extends Plugin {
 			}
 		});
 		
-		this.registerEditorExtension([createMindMapEditorViewPlugin(this.app), createMindMapWidgetStateField(this.app, this.changeMapSettings, this.checkNotes, this.updateNotes, this.viewMindMap)]);
+		this.registerEditorExtension([
+			createMindMapEditorViewPlugin(this.app), 
+			createMindMapWidgetStateField(
+				this.app, 
+				(line: number, match: RegExpExecArray) => changeMapSettings(this, line, match), 
+				(start: number, end: number) => checkNotes(this, start, end),
+				(start: number, end: number) => updateNotes(this, start, end),
+				(start: number, end: number) => viewMindMap(this, start, end)
+			)
+		]);
 
 		this.registerView(
 			VIEW_TYPE_MIND_MAP, 
@@ -59,53 +69,6 @@ export default class MindMapEditorPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
-	}
-
-	getActiveMarkdownView(): MarkdownView | null {
-		return this.app.workspace.getActiveViewOfType(MarkdownView);
-	}
-
-	changeMapSettings(line: number, match: RegExpExecArray) {
-		const markdownView = this.getActiveMarkdownView();
-		if (!markdownView) {
-			console.log("No active MarkdownView");
-			return;
-		}
-		const editor = markdownView.editor;
-		new MapSettingsEditorModal(this.app, editor, match, line);
-	}
-
-	checkNotes(start: number, end: number) {
-		const markdownView = this.getActiveMarkdownView();
-		if (!markdownView) {
-			console.log("No active MarkdownView");
-			return;
-		}
-		const editor = markdownView.editor;
-		// checkNotes(editor, start, end);
-	}
-
-	updateNotes(start: number, end: number) {
-		const markdownView = this.getActiveMarkdownView();
-		if (!markdownView) {
-			console.log("No active MarkdownView");
-			return;
-		}
-		const editor = markdownView.editor;
-		// check notes
-		// open modal to fix errors
-		// updateNotes(editor, start, end);
-		
-	}
-
-	viewMindMap(start: number, end: number) {
-		const markdownView = this.getActiveMarkdownView();
-		if (!markdownView) {
-			console.log("No active MarkdownView");
-			return;
-		}
-		const editor = markdownView.editor;
-		// checkNotes(editor, start, end);
 	}
 
 	async openMindMapView(mindMap?: MindMap) {
@@ -144,6 +107,105 @@ export default class MindMapEditorPlugin extends Plugin {
 			await view.loadGraph(mindMap, layout, () => {}, (layout: MindMapLayout) => saveLayout(this, layout));
 		}
 	}
+}
+
+function getActiveMarkdownView(plugin: Plugin): MarkdownView | null {
+	return plugin.app.workspace.getActiveViewOfType(MarkdownView);
+}
+
+function getEditor(plugin: Plugin): Editor | null {
+	const markdownView = getActiveMarkdownView(plugin);
+	if (!markdownView) {
+		console.log("No active MarkdownView");
+		return null;
+	}
+	return markdownView.editor;
+}
+
+function changeMapSettings(plugin: Plugin, line: number, match: RegExpExecArray) {
+	const editor = getEditor(plugin);
+	if (!editor) {
+		console.log("changeMapSettings(): could not find editor");
+		return;
+	}
+	const mindMap = parseMapTag(match[1]);
+	if (!mindMap) {
+		new Notice("Mind map is not properly defined.");
+		console.log("changeMapSettings(): mind map is improperly defined.");
+		return;
+	}
+	const indices = (match as any).indices;
+	new MapSettingsEditorModal(plugin.app, editor, mindMap, indices, line).open();
+}
+
+function checkNotes(plugin: Plugin, start: number, end: number) {
+	const editor = getEditor(plugin);
+	if (!editor) {
+		console.log("checkNotes(): could not find editor");
+		return;
+	}
+	dismissWarnings(editor, start, end);
+	const noteList = getListItems(editor, start, end);
+	addErrorTags(editor, noteList, start, end);
+}
+
+function updateNotes(plugin: Plugin, start: number, end: number) {
+	const editor = getEditor(plugin);
+	if (!editor) {
+		console.log("checkNotes(): could not find editor");
+		return;
+	}
+	dismissWarnings(editor, start, end);
+	const noteList = getListItems(editor, start, end);
+	if (noteList.warnings.length > 0) {
+		addErrorTags(editor, noteList, start, end);
+		console.log("updateNotes(): fix warnings before updating.");
+		return;
+	}
+	
+	new Notice("Creating cards... (this may take a few seconds)");
+
+	for (let newItem of noteList.listItems) {
+		if (newItem.study && !newItem.card) {
+			newItem.card = createEmptyCard();
+		}
+		// console.log("updateNotes(): new item", newItem);
+
+		const line = newItem.line!;
+		const text = editor.getLine(line);
+		const match = listItemRegex.exec(text);
+		if (!match) {
+			console.log("No list item at line", line);
+			continue;
+		}
+		const oldItem = parseListItem(match);
+		if (oldItem.content !== newItem.content ||
+				oldItem.id !== newItem.id ||
+				(oldItem.card == undefined) != (newItem.card == undefined)
+		) {
+			const indices = (match as any).indices;
+			const start = indices[3][0]; // start of content
+			const end = indices[0][1]; // end of line	
+			editor.replaceRange(
+				generateNoteString(newItem), 
+				{ line: line, ch: start },
+				{ line: line, ch: end }
+			);
+		}
+	}
+
+	console.log(`updateNotes(): updated ${noteList.listItems.length} notes`);
+	new Notice(`Updated ${noteList.listItems.length} notes`);
+}
+
+function viewMindMap(plugin: Plugin, start: number, end: number) {
+	const markdownView = getActiveMarkdownView(plugin);
+	if (!markdownView) {
+		console.log("No active MarkdownView");
+		return;
+	}
+	const editor = markdownView.editor;
+	// checkNotes(editor, start, end);
 }
 
 export async function openMindMapView(plugin: MindMapEditorPlugin, editor: Editor, mindMap: MindMap) {
@@ -188,7 +250,7 @@ function getListItems(editor: Editor, start: number, end: number): NoteList {
 	const warnings: Warning[] = [];
 	const createGroup = (item: ListItem, index: number) => {
 		groups.push({
-			content: item.content, 
+			content: item.content.toLowerCase(), 
 			id: item.id,
 			indices: [index],
 			ref: index,
@@ -344,48 +406,6 @@ export function dismissWarnings(editor: Editor, start: number, end: number) {
 			{ line: l, ch: to }
 		);
 	}
-}
-
-function checkNotes(editor: Editor, start: number, end: number) {
-	dismissWarnings(editor, start, end);
-
-
-
-	
-}
-
-export function updateNotes(editor: Editor, noteList: NoteList, start: number, end: number) {
-	new Notice("Creating cards... (this may take a few seconds)");
-
-	// update the props tag for each note
-	
-	for (let newItem of noteList.listItems) {
-		const line = newItem.line!;
-		const text = editor.getLine(line);
-
-		const match = listItemRegex.exec(text);
-		if (!match) {
-			console.log("No list item at line", line);
-			continue;
-		}
-		const oldItem = parseListItem(match);
-		if (oldItem.content !== newItem.content ||
-				oldItem.id !== newItem.id ||
-				oldItem.study !== newItem.study
-		) {
-			const indices = (match as any).indices;
-			const start = indices[3][0]; // start of content
-			const end = indices[0][1]; // end of line	
-			editor.replaceRange(
-				generateNoteString(newItem), 
-				{ line: line, ch: start },
-				{ line: line, ch: end }
-			);
-		}
-	}
-
-	console.log(`updateNotes(): updated ${noteList.listItems.length} notes`);
-	new Notice(`Updated ${noteList.listItems.length} notes`);
 }
 
 async function saveLayout(plugin: MindMapEditorPlugin, layout: MindMapLayout) {

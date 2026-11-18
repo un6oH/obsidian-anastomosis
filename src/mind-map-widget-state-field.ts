@@ -1,6 +1,6 @@
 import { Extension, RangeSetBuilder, StateField, Text, Transaction } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView } from "@codemirror/view";
-import { mapTagRegex } from "./helpers";
+import { mapTagRegex, parseMapTag } from "./helpers";
 import { MapMenuSpacerWidget, MapMenuWidget, MapTitleWidget } from "./widgets";
 import { App } from "obsidian";
 
@@ -30,12 +30,16 @@ export function createMindMapWidgetStateField(
 
     const builder = new RangeSetBuilder<Decoration>();
     matches.forEach((match, i) => {
+      const mindMap = parseMapTag(match[1]);
+      if (!mindMap) {
+        console.log("buildDecorations() mind map syntax error.");
+        return;
+      }
       const start = lineNumbers[i];
       const end = lineNumbers[i + 1];
       const lineIndex = doc.line(start + 1).from;
       const from = lineIndex + match.index;
       const to = from + match[0].length;
-      console.log("buildDecorations()", i, lineIndex, from, to);
       builder.add(
         from, 
         to, 
@@ -46,14 +50,14 @@ export function createMindMapWidgetStateField(
       builder.add(
         to, 
         to, 
-        Decoration.widget({
+        Decoration.replace({
           widget: new MapMenuSpacerWidget()
         })
       );
       builder.add(
         to, 
         to, 
-        Decoration.widget({
+        Decoration.replace({
           widget: new MapMenuWidget(
             app, 
             match, 
@@ -64,7 +68,7 @@ export function createMindMapWidgetStateField(
           )
         })
       );
-    })
+    });
 
     return builder.finish();
   }
