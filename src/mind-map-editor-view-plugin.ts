@@ -1,7 +1,7 @@
 import { ViewUpdate, PluginValue, EditorView, ViewPlugin, DecorationSet, Decoration } from '@codemirror/view';
 import { Line, RangeSetBuilder } from '@codemirror/state';
 import { App } from 'obsidian';
-import { notePattern, errorPattern, cardTagOpen, cardTagClose, noteRegex } from 'helpers';
+import { errorPattern, cardTagOpen, cardTagClose, noteRegex } from './helpers';
 import { ErrorWidget, NoteDataWidget } from './widgets';
 
 export function createMindMapEditorViewPlugin(app: App) {
@@ -43,15 +43,8 @@ export function createMindMapEditorViewPlugin(app: App) {
           for (let line of lines) {
             let noteMatch = noteRegex.exec(line.text);
             if (noteMatch) {
-              const indices = (noteMatch as any).indices;
-              indices.forEach((pair: number[], i: number, array: number[][]) => {
-                if (!pair) {
-                  return;
-                } else {
-                  pair[0] += line.from;
-                  pair[1] += line.from;
-                }
-              });
+              let indices = (noteMatch as any).indices;
+              indices = indices.map((pair: number[]) => pair ? [pair[0] + from, pair[1] + from] : undefined);
 
               const start = indices[6][0] - cardTagOpen.length;
               const end = indices[6][1] + cardTagClose.length;
@@ -80,12 +73,11 @@ export function createMindMapEditorViewPlugin(app: App) {
           }
 
           let spaceMatch;
-          const spaceMatchRegex = RegExp("\\t+?( +)|( +)\\t+?", 'dgm');
+          const spaceMatchRegex = RegExp("^(?:\\t+)?( +)(?:\\t+)?(?:\\d+\\.|-)", 'dgm');
           while ((spaceMatch = spaceMatchRegex.exec(text)) !== null) {
             let indices: number[][] = (spaceMatch as any).indices;
-            const group = indices[1] ? 1 : 2;
-            const start = indices[group][0] + from;
-            const end = indices[group][1] + from;
+            const start = from + indices[1][0];
+            const end = from + indices[1][1];
             const deco = Decoration.mark({
               class: "mark-indent-error"
             });

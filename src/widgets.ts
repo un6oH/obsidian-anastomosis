@@ -1,8 +1,8 @@
 import { EditorView, WidgetType } from '@codemirror/view';
-import { cardStateColours, colour, formatContent, parseListItem, parseNote } from 'helpers';
-import { MapSettingsEditorModal, NoteEditorModal } from 'modals';
+import { cardStateColours, colour, formatContent, parseListItem, parseNote } from './helpers';
+import { MapSettingsEditorModal, NoteEditorModal } from './modals';
 import { App } from 'obsidian';
-import { Note, WarningType } from 'types';
+import { Note, WarningType } from './types';
 
 export class MapTitleWidget extends WidgetType {
   title: string;

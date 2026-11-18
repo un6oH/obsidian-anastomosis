@@ -1,10 +1,10 @@
 import { Editor, MarkdownView, Notice, Plugin, WorkspaceLeaf } from 'obsidian';
-import { createMindMapEditorViewPlugin } from 'view-plugins/mind-map-editor-view-plugin';
-import { VIEW_TYPE_MIND_MAP, MindMapView } from 'views/mind-map-view';
-import { Settings, MindMapLayout, Warning, NoteGroup, MindMap, ListItem, WarningType, NoteList } from 'types';
-import { errorTagOpen, errorTagClose, generateNoteString, parseListItem, listItemRegex, errorTagRegex } from 'helpers';
-import { MapSettingsEditorModal, MindMapCreatorModal } from 'modals';
-import { createMindMapWidgetStateField } from 'view-plugins/mind-map-widget-state-field';
+import { createMindMapEditorViewPlugin } from './mind-map-editor-view-plugin';
+import { VIEW_TYPE_MIND_MAP, MindMapView } from './mind-map-view';
+import { Settings, MindMapLayout, Warning, NoteGroup, MindMap, ListItem, WarningType, NoteList } from './types';
+import { errorTagOpen, errorTagClose, generateNoteString, parseListItem, listItemRegex, errorTagRegex } from './helpers';
+import { MapSettingsEditorModal, MindMapCreatorModal } from './modals';
+import { createMindMapWidgetStateField } from './mind-map-widget-state-field';
 
 const DEFAULT_SETTINGS = {
 	layouts: [], 
@@ -47,12 +47,14 @@ export default class MindMapEditorPlugin extends Plugin {
 		this.addRibbonIcon('graph-star', 'Anastomosis: Open mind map viewer', () => this.openMindMapView());
 	}
 
-	async onunload() {
-
-	}
+	onunload() {}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			(await this.loadData()) as Partial<Settings>,
+		);
 	}
 
 	async saveSettings() {
@@ -147,12 +149,12 @@ export default class MindMapEditorPlugin extends Plugin {
 export async function openMindMapView(plugin: MindMapEditorPlugin, editor: Editor, mindMap: MindMap) {
 	const filePath = plugin.app.workspace.activeEditor?.file?.path!;
 	// console.log(filePath);
-	let layoutIndex = plugin.settings.layouts.findIndex((layout) => layout.path === filePath);
+	let layoutIndex = plugin.settings.layouts.find((layout) => layout.path === filePath);
 	const layout: MindMapLayout = {
 		path: filePath, 
-		ids: layoutIndex != -1 ? plugin.settings.layouts[layoutIndex].ids : [],
-		xCoords: layoutIndex != -1 ? plugin.settings.layouts[layoutIndex].xCoords : [],
-		yCoords: layoutIndex != -1 ? plugin.settings.layouts[layoutIndex].yCoords : [], 
+		ids: layoutIndex ? layoutIndex.ids : [],
+		xCoords: layoutIndex ? layoutIndex.xCoords : [],
+		yCoords: layoutIndex ? layoutIndex.yCoords : [], 
 	}
 
 	const workspace = plugin.app.workspace;
@@ -209,32 +211,32 @@ function getListItems(editor: Editor, start: number, end: number): NoteList {
 		const content = item.content.toLowerCase();
 		
 		if (item.id !== undefined) { // all notes with an id tag get linked
-			const groupIndex = groups.findIndex((group) => group.id === item.id);
+			const group = groups.find(group => group.id === item.id);
 
 			// no matching id
-			if (groupIndex == -1) { 
+			if (!group) { 
 				createGroup(item, index);
 			} else {
 				// check if there is a content conflict
 				if (content) {
-					const groupContent = groups[groupIndex].content;
+					const groupContent = group.content;
 					if (groupContent !== undefined) { 
 						if (groupContent === "") { // first instance of tag was empty
-							groups[groupIndex].content = content; // set the content
+							group.content = content; // set the content
 						} else if (groupContent !== content) {
-							groups[groupIndex].content = undefined; // set undefined to flag conflict
+							group.content = undefined; // set undefined to flag conflict
 						}
 					} // leave undefined as there is a conflict
 				}
-				groups[groupIndex].indices.push(index);
+				group.indices.push(index);
 			}
 		} else {
 			// find group with the same content and is accepting more members
-			const groupIndex = groups.findIndex((group) => group.id === undefined && group.content! === content);
-			if (groupIndex == -1) { // no valid groups found
+			const group = groups.find((group) => group.id === undefined && group.content! === content);
+			if (!group) { // no valid groups found
 				createGroup(item, index);
 			} else {
-				groups[groupIndex].indices.push(index);
+				group.indices.push(index);
 			}
 		}
 	}
@@ -262,7 +264,7 @@ function getListItems(editor: Editor, start: number, end: number): NoteList {
 			if (itemBelow.level > item.level || 
 					itemBelow.level == item.level && itemBelow.listNumber == item.listNumber + 1) {
 				parents.push(index);
-				groups[g].ref = index;
+				group.ref = index;
 			}
 		});
 		// multiple nodes with children

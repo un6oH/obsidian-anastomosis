@@ -1,6 +1,6 @@
 import { ItemView, Notice, WorkspaceLeaf } from 'obsidian';
-import { MindMap, MindMapLayout, Note, NoteGroup } from 'types';
-import { colour, formatContent } from 'helpers';
+import { MindMap, MindMapLayout, Note, NoteGroup } from './types';
+import { colour, formatContent } from './helpers';
 import * as d3 from 'd3';
 import { Card, fsrs, FSRS, Grade, Grades, IPreview, Rating, show_diff_message } from 'ts-fsrs';
 
@@ -273,13 +273,13 @@ export class MindMapView extends ItemView {
       case '[':
         this.minFontSize = Math.max(6, this.minFontSize - 2);
         this.nodes.forEach(node => {
-          this.labelAnchors[node.index].style.fontSize = fontSize(this.minFontSize * this.transform.k, this.minFontSize * this.maxFontScale * this.transform.k, node.level);
+          this.labelAnchors[node.index].style.fontSize = fontSize(this.minFontSize * this.transform.k, this.minFontSize * this.maxFontScale * this.transform.k, node.level, "px");
         });
         console.log("minFontSize:", this.minFontSize);
         break;
       case ']':
         this.minFontSize += 2;
-        this.nodes.forEach(node => this.labelAnchors[node.index].style.fontSize = fontSize(this.minFontSize * this.transform.k, this.minFontSize * this.maxFontScale * this.transform.k, node.level));
+        this.nodes.forEach(node => this.labelAnchors[node.index].style.fontSize = fontSize(this.minFontSize * this.transform.k, this.minFontSize * this.maxFontScale * this.transform.k, node.level, "px"));
         console.log("minFontSize:", this.minFontSize);
         break;
     }
@@ -333,7 +333,7 @@ export class MindMapView extends ItemView {
     this.layout = layout;
     this.saveProgressCallback = saveProgressCallback;
     this.saveLayoutCallback = saveLayoutCallback;
-    this.fsrs = fsrs(this.mindMap.map.studySettings);
+    this.fsrs = fsrs(this.mindMap.studySettings);
     
     const presetLayout = layout.ids.length != 0;
 
@@ -343,58 +343,33 @@ export class MindMapView extends ItemView {
 
     // add central node (title)
     let centreNode = {} as Node;
-    if (!mindMap.map.separateHeadings) {
-      let content = document.createElement('span');
-      content.textContent = this.mindMap.map.title;
-      // console.log("centre node content:", content);
-      content.addClass('mind-map-label-title');
-      centreNode = {
-        id: this.mindMap.map.title, 
-        index: 0, 
-        content, 
-        hidden: content, 
-        collideRadius: Math.sqrt(this.mindMap.map.title.length), 
-        level: 0,
-        listNumber: 0, 
-        linksTo: [], 
-        linksFrom: [], 
-        x: 0, 
-        y: 0, 
-        fx: 0, 
-        fy: 0, 
-      }
-      this.nodes.push(centreNode);
-      originIds.push("");
+    let content = document.createElement('span');
+    content.textContent = this.mindMap.title;
+    // console.log("centre node content:", content);
+    content.addClass('mind-map-label-title');
+    centreNode = {
+      id: this.mindMap.title, 
+      index: 0, 
+      content, 
+      hidden: content, 
+      collideRadius: Math.sqrt(this.mindMap.title.length) * fontSize(this.minFontSize, this.maxFontScale, 0), 
+      level: 0,
+      listNumber: 0, 
+      linksTo: [], 
+      linksFrom: [], 
+      x: 0, 
+      y: 0, 
+      fx: 0, 
+      fy: 0, 
     }
+    this.nodes.push(centreNode);
+    originIds.push("");
 
     // preprocessing
     const groups: NoteGroup[] = [];
     const chains: Chain[] = [];
     let nodeIndex = 0;
     for (let note of this.mindMap.notes) {
-      // if the note has a specified id
-      if (note.id && this.mindMap.map.crosslink) {
-        const groupIndex = groups.findIndex((group) => group.id === note.id);
-        if (groupIndex == -1) { // no matching id
-          groups.push({
-            content: note.content, 
-            id: note.id, 
-            indices: [nodeIndex], 
-            levels: [], 
-            ref: nodeIndex,
-          });
-        } else {
-          groups[groupIndex].indices.push(nodeIndex);
-          // make this note the reference if it has children or is before a note
-          const level = mindMap.tree[nodeIndex].length - 1;
-          const nextIndex = nodeIndex + 1;
-          if (nextIndex < this.mindMap.notes.length) {
-            const levelOfNext = mindMap.tree[nextIndex].length - 1;
-            if (level < levelOfNext) groups[groupIndex].ref = nodeIndex;
-          }
-        }
-      }
-
       // find chains
       const listNumber = note.listNumber;
       if (listNumber == 0) {
@@ -407,13 +382,7 @@ export class MindMapView extends ItemView {
       let id = path.join('-');
       let parent = path.slice(0, -1).join('-');
       if (path.length == 1) { // primary node that can be studied
-        if (mindMap.map.separateHeadings && note.card) { // must have centre node
-          new Notice("Error: Studyable notes must have a parent node.");
-          console.log("loadMindMap() Error: key word does not have a parent node content:", note.content, "path:", path);
-          return;
-        } else {
-          parent = centreNode.id;
-        }
+        parent = centreNode.id;
       }
 
       // add to chain array
@@ -1194,9 +1163,10 @@ function linkStrokeDasharray(mode: ViewMode, link: Link): string {
   return "";
 }
 
-function fontSize(min: number, max: number, level: number): string {
+function fontSize(min: number, max: number, level: number, unit?: string): any {
   const d = max - min;
-  return (Math.round((d / (level + 1) + min) * 2) * 0.5).toString() + "px";
+  const size = (Math.round((d / (level + 1) + min) * 2) * 0.5);
+  return unit ? size.toString() + unit : size;
 }
 
 function collideRadius(text: string): number {

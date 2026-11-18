@@ -1,6 +1,6 @@
 import { Extension, RangeSetBuilder, StateField, Text, Transaction } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView } from "@codemirror/view";
-import { mapTagRegex } from "helpers";
+import { mapTagRegex } from "./helpers";
 import { MapMenuSpacerWidget, MapMenuWidget, MapTitleWidget } from "./widgets";
 import { App } from "obsidian";
 

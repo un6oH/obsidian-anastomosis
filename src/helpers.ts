@@ -1,7 +1,8 @@
 import { generatorParameters, createEmptyCard, FSRSParameters, Card, State } from "ts-fsrs";
-import { Note, MindMap, ListItem } from "types";
+import { Note, MindMap, ListItem } from "./types";
 import { interpolateRainbow, style } from "d3";
 
+// any list delimiter with a non-whitespace character
 export const listItemPattern = "(\\t*)(\\d+\\. |- )(.+(?:\\S))";
 export const listItemRegex = RegExp(listItemPattern, 'd');
 
@@ -45,69 +46,38 @@ export function parseNumberArray(array: string): number[] {
 }
 
 // parses map tag
-export function parseMapTag(text: string): MindMap {
+export function parseMapTag(text: string): MindMap | null {
 	const parameters = text.trim().split(';');
+	if (parameters.length < 7) {
+		console.log("parseMapTag() tag does not contain all parameters.");
+		return null;
+	}
+
+	const maximum_interval = parseFloat(parameters[3]);
+	if (isNaN(maximum_interval)) {
+		console.log("parseMapTag() maximum interval not defined.");
+		return null;
+	}
+	const request_retention = parseFloat(parameters[4]);
+	if (isNaN(request_retention)) {
+		console.log("parseMapTag() target retention not defined.");
+		return null;
+	}
+
 	const props: Partial<FSRSParameters> = {
-		enable_fuzz: parameters[1] !== "" ? parameters[1] === "true" : undefined, 
-		enable_short_term: parameters[2] !== "" ? parameters[2] === "true" : undefined, 
-		maximum_interval: parameters[3] !== "" ? parseFloat(parameters[3]) : undefined, 
-		request_retention: parameters[4] !== "" ? parseFloat(parameters[4]) : undefined, 
+		enable_fuzz: parameters[1] === "true", 
+		enable_short_term: parameters[2] === "true", 
+		maximum_interval,
+		request_retention,
 		w: parameters[6] !== "" ? parseNumberArray(parameters[6]) : undefined, 
 	};
 	return { 
-		title: parameters[0], 
+		title: parameters[0] ? parameters[0] : "Untitled", 
 		studySettings: generatorParameters(props),
 		range: [], // placeholder
 		notes: [], // placeholder
 	};
 }
-
-/* export function parseMindMap(text: string, includeRef: boolean): MindMap | null {
-	// map settings
-	const mapTagRegex = new RegExp(mapTagPattern, 'gm');
-	let mapMatch = mapTagRegex.exec(text);
-	if (!mapMatch) {
-		console.log("Study parameters not found");
-		return null;
-	}
-	
-	const mindMap = parseMapTag(mapMatch[1]);
-	
-	// notes
-	const noteRegex = new RegExp(notePattern, 'gm');
-	let noteMatch;
-	while ((noteMatch = noteRegex.exec(text)) !== null) {
-		mindMap.notes.push(parseNote(noteMatch));
-	}
-
-	return mindMap;
-} */
-
-/* export function noteTree(items: ListItem[], levels: number[], path: string[]): string[][] {
-	// get indices of lines of immediate children
-	const notesAtCurrentLevel: number[] = [];
-	for (let i = 0; i < items.length; i++) { // iterate over each entry
-		if (levels[i] == path.length) {
-			notesAtCurrentLevel.push(i); // add index of immediate child
-			// console.log(notes[i], i);
-		}
-	}
-	notesAtCurrentLevel.push(items.length);
-
-	// iterate over immediate children
-	let paths: string[][] = []; // path accumulator
-	for (let index = 0; index < notesAtCurrentLevel.length - 1; index++) {
-		const i = notesAtCurrentLevel[index];
-		let self = toNoteID(items[i].content ? items[i].content : items[i].id!); // convert to id
-		let newPath = path.concat(self);
-		paths.push(newPath);
-		let start = i + 1; 
-		let end = notesAtCurrentLevel[index + 1];
-		paths.push(...noteTree(items.slice(start, end), levels.slice(start, end), newPath));
-	}
-
-	return paths;
-} */
 
 export function canStudy(content: string): boolean {
 	let study = true;
@@ -163,12 +133,13 @@ export function parseListNumber(str: string): number {
 
 // parse parameters in card tag
 export function parseCard(tag: string): Card | undefined {
-	if (tag === "") {
+	const props = tag.split(';');
+	if (props.length < 9 || props.some((value, i) => value === "" && i != 8)) {
+		console.log("parseCard(): card does not contain all parameters.");
 		return undefined;
 	}
-	const props = tag.split(';');
 
-	return {
+	const card = {
 		due: new Date(props[0]),
     stability: parseFloat(props[1]),
     difficulty: parseFloat(props[2]),
@@ -178,30 +149,13 @@ export function parseCard(tag: string): Card | undefined {
     lapses: parseFloat(props[6]),
     state: parseFloat(props[7]),
     last_review: props[8] ? new Date(props[8]) : undefined,
+	};
+	if ([ card.stability, card.difficulty, card.elapsed_days, card.scheduled_days, card.reps, card.reps, card.lapses, card.state ].some(value => isNaN(value))) {
+		console.log("parseCard(): some properties not defined.");
+		return undefined;
 	}
+	return card;
 }
-
-// parse note with card tag
-// return note with assigned properties
-// must pass in a RegExpExecArray matched with the note pattern
-// line: 0-based index of line in document. 
-/* export function parseNote(match: RegExpExecArray, line?: number): Note {
-	const note = {} as Note;
-
-	note.listNumber = parseListNumber(match[2]);
-
-	const { content, id, type } = parseListItem(match[3]);
-	note.content = content;
-	note.id = id;
-	note.type = type;
-	note.card = parseCard(match[4]);
-	if (line) {
-		note.line = line;
-		note.indices = (match as any).indices;
-	}
-
-	return note;
-} */
 
 const NOTE_ID_MAX_LENGTH = 12;
 // const pastedImageRegexGlobal = RegExp(pastedImagePattern, 'gm');
@@ -265,11 +219,6 @@ export function generateMapString(mindMap: MindMap, includeTags = true): string 
 		string = mapTagOpen + string + mapTagClose;
 
 	return string;
-}
-
-
-export function removeTags(text: string): string {
-	return text.split('%%', 1)[0].trim();
 }
 
 interface TextFragment {

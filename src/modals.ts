@@ -1,9 +1,9 @@
 import { EditorView } from '@codemirror/view';
-import { App, ButtonComponent, Editor, Modal, Setting, SuggestModal, TextComponent, ToggleComponent } from 'obsidian';
+import { App, ButtonComponent, Editor, Modal, Notice, Setting, SuggestModal, TextComponent, ToggleComponent } from 'obsidian';
 import { createEmptyCard, generatorParameters, State } from 'ts-fsrs';
-import { ListItem, MindMap, Note, NoteList } from 'types';
-import { parseNumberArray, parseMapTag, generateMapString, parseListItem, canStudy, generateNoteString, cardTagOpen, cardTagClose } from 'helpers';
-import MindMapEditorPlugin from 'main';
+import { ListItem, MindMap, Note, NoteList } from './types';
+import { parseNumberArray, parseMapTag, generateMapString, parseListItem, canStudy, generateNoteString, cardTagOpen, cardTagClose } from './helpers';
+import MindMapEditorPlugin from './main';
 
 export class MindMapCreatorModal extends Modal {
 	constructor(app: App, title: string, editorCallback: (text: string) => void) {
@@ -147,6 +147,12 @@ export class MapSettingsEditorModal extends Modal {
 		// console.log("Created map study settings editor modal", "start:", start, "end:", end);
 		super(app);
 		const mindMap = parseMapTag(match[0]);
+		if (!mindMap) {
+			new Notice("Mind map is not propoerly defined.");
+			console.log("MapSettingsEditorModal(): mind map is improperly defined.");
+			this.close();
+			return;
+		}
 		const indices = (match as any).indices;
 
 		// parse data string
