@@ -1,10 +1,10 @@
 {
-	"id": "mind-map-editor-plugin",
-	"name": "Mind Map Editor",
+	"id": "anastomosis-plugin",
+	"name": "Anastomosis",
 	"version": "1.0.0",
 	"minAppVersion": "1.0.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
+	"description": "Create interconnected mind maps from lists, and study them using spaced repetition.",
+	"author": "un6oH",
 	"authorUrl": "https://obsidian.md",
 	"fundingUrl": "https://obsidian.md/pricing",
 	"isDesktopOnly": false

@@ -1,17 +1,19 @@
-import { Editor, MarkdownView, Notice, Plugin, WorkspaceLeaf } from 'obsidian';
-import { createMindMapEditorViewPlugin } from './mind-map-editor-view-plugin';
+import { addIcon, Editor, MarkdownView, Notice, Plugin, setIcon, WorkspaceLeaf } from 'obsidian';
+import { createAnastomosisViewPlugin } from './view-plugin';
 import { VIEW_TYPE_MIND_MAP, MindMapView } from './mind-map-view';
 import { Settings, MindMapLayout, Warning, NoteGroup, MindMap, ListItem, WarningType, NoteList } from './types';
-import { errorTagOpen, errorTagClose, generateNoteString, parseListItem, listItemRegex, errorTagRegex, parseMapTag, generateCardString } from './helpers';
+import { errorTagOpen, errorTagClose, generateNoteString, parseListItem, listItemRegex, errorTagRegex, parseMapTag, generateCardString, generateMapString, endMapTagPattern } from './helpers';
 import { MapSettingsEditorModal, MindMapCreatorModal } from './modals';
-import { createMindMapWidgetStateField } from './mind-map-widget-state-field';
+import { createAnastomosisStateField, mindMapRanges } from './state-field';
 import { createEmptyCard } from 'ts-fsrs';
+import { StateField } from '@codemirror/state';
+import { DecorationSet } from '@codemirror/view';
 
 const DEFAULT_SETTINGS = {
 	layouts: [], 
 }
 
-export default class MindMapEditorPlugin extends Plugin {
+export default class AnastomosisPlugin extends Plugin {
 	settings: Settings = {} as Settings;
 	mindMapView: MindMapView = {} as MindMapView;
 
@@ -27,15 +29,18 @@ export default class MindMapEditorPlugin extends Plugin {
 			}
 		});
 		
+		let mapIndex = createAnastomosisStateField(
+			this.app, 
+			(line: number, match: RegExpExecArray) => changeMapSettings(this, line, match), 
+			(start: number, end: number) => checkNotes(this, start, end),
+			(start: number, end: number) => updateNotes(this, start, end),
+			(start: number, end: number) => viewMindMap(this, start, end)
+		);
+
 		this.registerEditorExtension([
-			createMindMapEditorViewPlugin(this.app), 
-			createMindMapWidgetStateField(
-				this.app, 
-				(line: number, match: RegExpExecArray) => changeMapSettings(this, line, match), 
-				(start: number, end: number) => checkNotes(this, start, end),
-				(start: number, end: number) => updateNotes(this, start, end),
-				(start: number, end: number) => viewMindMap(this, start, end)
-			)
+			createAnastomosisViewPlugin(this.app, mindMapRanges), 
+			mapIndex,
+			mindMapRanges, 
 		]);
 
 		this.registerView(
@@ -48,12 +53,20 @@ export default class MindMapEditorPlugin extends Plugin {
 			id: 'mindmapeditor-create-mindmap-template', 
 			name: 'Create new mind map', 
 			editorCallback: (editor: Editor) => {
-				new MindMapCreatorModal(this.app, editor.getSelection(), (text) => {
+				new MindMapCreatorModal(this.app, editor.getSelection(), (map: MindMap) => {
+					const text = `${generateMapString(map)}\n\n${endMapTagPattern}`;
 					editor.replaceSelection(text);
+					const pos = editor.getCursor();
+					editor.setCursor({
+						line: pos.line - 1,
+						ch: 0
+					})
 				}).open();
 			}
 		});
 
+		// graph-star icon by karsa-mistmere (Lucide)
+		addIcon('graph-star', `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-graph-star"><path d="m12.342 9.316 1.764-3.527"/><path d="m12.59 14.545 2.35 3.759"/><path d="m13.982 12.332 4.03.447"/><path d="M5.414 17.586 8.88 14.12"/><path d="M9.025 9.742 5.317 5.505"/><circle cx="11" cy="12" r="3"/><circle cx="15" cy="4" r="2"/><circle cx="16" cy="20" r="2"/><circle cx="20" cy="13" r="2"/><circle cx="4" cy="19" r="2"/><circle cx="4" cy="4" r="2"/></svg>`);
 		this.addRibbonIcon('graph-star', 'Anastomosis: Open mind map viewer', () => this.openMindMapView());
 	}
 
@@ -136,110 +149,6 @@ function changeMapSettings(plugin: Plugin, line: number, match: RegExpExecArray)
 	}
 	const indices = (match as any).indices;
 	new MapSettingsEditorModal(plugin.app, editor, mindMap, indices, line).open();
-}
-
-function checkNotes(plugin: Plugin, start: number, end: number) {
-	const editor = getEditor(plugin);
-	if (!editor) {
-		console.log("checkNotes(): could not find editor");
-		return;
-	}
-	dismissWarnings(editor, start, end);
-	const noteList = getListItems(editor, start, end);
-	addErrorTags(editor, noteList, start, end);
-}
-
-function updateNotes(plugin: Plugin, start: number, end: number) {
-	const editor = getEditor(plugin);
-	if (!editor) {
-		console.log("checkNotes(): could not find editor");
-		return;
-	}
-	dismissWarnings(editor, start, end);
-	const noteList = getListItems(editor, start, end);
-	if (noteList.warnings.length > 0) {
-		addErrorTags(editor, noteList, start, end);
-		console.log("updateNotes(): fix warnings before updating.");
-		return;
-	}
-	
-	new Notice("Creating cards... (this may take a few seconds)");
-
-	for (let newItem of noteList.listItems) {
-		if (newItem.study && !newItem.card) {
-			newItem.card = createEmptyCard();
-		}
-		// console.log("updateNotes(): new item", newItem);
-
-		const line = newItem.line!;
-		const text = editor.getLine(line);
-		const match = listItemRegex.exec(text);
-		if (!match) {
-			console.log("No list item at line", line);
-			continue;
-		}
-		const oldItem = parseListItem(match);
-		if (oldItem.content !== newItem.content ||
-				oldItem.id !== newItem.id ||
-				(oldItem.card == undefined) != (newItem.card == undefined)
-		) {
-			const indices = (match as any).indices;
-			const start = indices[3][0]; // start of content
-			const end = indices[0][1]; // end of line	
-			editor.replaceRange(
-				generateNoteString(newItem), 
-				{ line: line, ch: start },
-				{ line: line, ch: end }
-			);
-		}
-	}
-
-	console.log(`updateNotes(): updated ${noteList.listItems.length} notes`);
-	new Notice(`Updated ${noteList.listItems.length} notes`);
-}
-
-function viewMindMap(plugin: Plugin, start: number, end: number) {
-	const markdownView = getActiveMarkdownView(plugin);
-	if (!markdownView) {
-		console.log("No active MarkdownView");
-		return;
-	}
-	const editor = markdownView.editor;
-	// checkNotes(editor, start, end);
-}
-
-export async function openMindMapView(plugin: MindMapEditorPlugin, editor: Editor, mindMap: MindMap) {
-	const filePath = plugin.app.workspace.activeEditor?.file?.path!;
-	// console.log(filePath);
-	let layoutIndex = plugin.settings.layouts.find((layout) => layout.path === filePath);
-	const layout: MindMapLayout = {
-		path: filePath, 
-		ids: layoutIndex ? layoutIndex.ids : [],
-		xCoords: layoutIndex ? layoutIndex.xCoords : [],
-		yCoords: layoutIndex ? layoutIndex.yCoords : [], 
-	}
-
-	const workspace = plugin.app.workspace;
-
-	let leaf: WorkspaceLeaf | null = null;
-	const leaves = workspace.getLeavesOfType(VIEW_TYPE_MIND_MAP);
-
-	if (leaves.length > 0) {
-		// A leaf with our view already exists, use that
-		console.log("studyMindMap() leaf with view exists");
-		leaf = leaves[0];
-	} else {
-		// Our view could not be found in the workspace, create a new leaf
-		console.log("studyMindMap() leaf with view does not exist");
-		leaf = workspace.getLeaf('window');
-		await leaf.setViewState({ type: VIEW_TYPE_MIND_MAP, active: true });
-	}
-
-	// "Reveal" the leaf in case it is in a collapsed sidebar
-	console.log(mindMap);
-	await workspace.revealLeaf(leaf);
-	const view = leaf.view as MindMapView;
-	await view.loadGraph(mindMap, layout, () => {}, (layout: MindMapLayout) => saveLayout(plugin, layout));
 }
 
 // input: editor, start line, end line (end of doc or )
@@ -408,7 +317,111 @@ export function dismissWarnings(editor: Editor, start: number, end: number) {
 	}
 }
 
-async function saveLayout(plugin: MindMapEditorPlugin, layout: MindMapLayout) {
+function checkNotes(plugin: Plugin, start: number, end: number) {
+	const editor = getEditor(plugin);
+	if (!editor) {
+		console.log("checkNotes(): could not find editor");
+		return;
+	}
+	dismissWarnings(editor, start, end);
+	const noteList = getListItems(editor, start, end);
+	addErrorTags(editor, noteList, start, end);
+}
+
+function updateNotes(plugin: Plugin, start: number, end: number) {
+	const editor = getEditor(plugin);
+	if (!editor) {
+		console.log("checkNotes(): could not find editor");
+		return;
+	}
+	dismissWarnings(editor, start, end);
+	const noteList = getListItems(editor, start, end);
+	if (noteList.warnings.length > 0) {
+		addErrorTags(editor, noteList, start, end);
+		console.log("updateNotes(): fix warnings before updating.");
+		return;
+	}
+	
+	new Notice("Creating cards... (this may take a few seconds)");
+
+	for (let newItem of noteList.listItems) {
+		if (newItem.study && !newItem.card) {
+			newItem.card = createEmptyCard();
+		}
+		// console.log("updateNotes(): new item", newItem);
+
+		const line = newItem.line!;
+		const text = editor.getLine(line);
+		const match = listItemRegex.exec(text);
+		if (!match) {
+			console.log("No list item at line", line);
+			continue;
+		}
+		const oldItem = parseListItem(match);
+		if (oldItem.content !== newItem.content ||
+				oldItem.id !== newItem.id ||
+				(oldItem.card == undefined) != (newItem.card == undefined)
+		) {
+			const indices = (match as any).indices;
+			const start = indices[3][0]; // start of content
+			const end = indices[0][1]; // end of line	
+			editor.replaceRange(
+				generateNoteString(newItem), 
+				{ line: line, ch: start },
+				{ line: line, ch: end }
+			);
+		}
+	}
+
+	console.log(`updateNotes(): updated ${noteList.listItems.length} notes`);
+	new Notice(`Updated ${noteList.listItems.length} notes`);
+}
+
+function viewMindMap(plugin: Plugin, start: number, end: number) {
+	const markdownView = getActiveMarkdownView(plugin);
+	if (!markdownView) {
+		console.log("No active MarkdownView");
+		return;
+	}
+	const editor = markdownView.editor;
+	// checkNotes(editor, start, end);
+}
+
+export async function openMindMapView(plugin: AnastomosisPlugin, editor: Editor, mindMap: MindMap) {
+	const filePath = plugin.app.workspace.activeEditor?.file?.path!;
+	// console.log(filePath);
+	let layoutIndex = plugin.settings.layouts.find((layout) => layout.path === filePath);
+	const layout: MindMapLayout = {
+		path: filePath, 
+		ids: layoutIndex ? layoutIndex.ids : [],
+		xCoords: layoutIndex ? layoutIndex.xCoords : [],
+		yCoords: layoutIndex ? layoutIndex.yCoords : [], 
+	}
+
+	const workspace = plugin.app.workspace;
+
+	let leaf: WorkspaceLeaf | null = null;
+	const leaves = workspace.getLeavesOfType(VIEW_TYPE_MIND_MAP);
+
+	if (leaves.length > 0) {
+		// A leaf with our view already exists, use that
+		console.log("studyMindMap() leaf with view exists");
+		leaf = leaves[0];
+	} else {
+		// Our view could not be found in the workspace, create a new leaf
+		console.log("studyMindMap() leaf with view does not exist");
+		leaf = workspace.getLeaf('window');
+		await leaf.setViewState({ type: VIEW_TYPE_MIND_MAP, active: true });
+	}
+
+	// "Reveal" the leaf in case it is in a collapsed sidebar
+	console.log(mindMap);
+	await workspace.revealLeaf(leaf);
+	const view = leaf.view as MindMapView;
+	await view.loadGraph(mindMap, layout, () => {}, (layout: MindMapLayout) => saveLayout(plugin, layout));
+}
+
+async function saveLayout(plugin: AnastomosisPlugin, layout: MindMapLayout) {
 	const index = plugin.settings.layouts.findIndex((l) => l.path === layout.path);
 	if (index != -1) {
 		plugin.settings.layouts[index] = layout;

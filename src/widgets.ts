@@ -1,5 +1,5 @@
 import { EditorView, WidgetType } from '@codemirror/view';
-import { cardStateColours, colour, formatContent, parseListItem, parseNote } from './helpers';
+import { cardStateColours, colour, formatContent, generateNoteString, parseListItem, parseNote } from './helpers';
 import { MapSettingsEditorModal, NoteEditorModal } from './modals';
 import { App } from 'obsidian';
 import { Note, WarningType } from './types';
@@ -80,7 +80,7 @@ export class MapMenuWidget extends WidgetType {
   }
 }
 
-export class NoteDataWidget extends WidgetType {
+export class NoteWidget extends WidgetType {
   app: App = {} as App;
   match: RegExpExecArray;
   note: Note;
@@ -121,28 +121,39 @@ export class NoteDataWidget extends WidgetType {
     block.addClass('widget-note');
 
     block.appendChild(icon);
-    const content = formatContent(document, this.note.content, () => {}).content;
-    // block.appendChild(formatContent(document, this.note.content, () => {}).content);
-    block.appendChild(content);
-    if (this.note.id !== undefined && !this.note.content) {
+    const label = document.createElement('span');
+    label.addClass('widget-note-label');
+    block.appendChild(label);
+    if (this.note.content) {
+      label.appendChild(formatContent(document, this.note.content, () => {}).content);
+    } else {
       const tag = document.createElement('span');
       tag.addClass('cm-hashtag');
       tag.textContent = "#" + this.note.id;
-      block.appendText(this.note.content ? " (" : "(");
-      block.appendChild(tag);
-      block.appendText(")");
+      label.appendText("(");
+      label.appendChild(tag);
+      label.appendText(")");
     }
-
-    content.hide();
+    label.hide();
     block.onmouseover = () => {
-      content.show();
+      label.show();
     }
     block.onmouseleave = () => {
-      content.hide();
+      label.hide();
     }
 
+    const updateData = (note: Note) => {
+      const contentEdit = view.state.update({
+        changes: {
+          from: this.indices[3][0],
+          to: this.indices[0][1],
+          insert: generateNoteString(note)
+        }
+      });
+      view.dispatch(contentEdit);
+    }
     block.onclick = () => {
-      new NoteEditorModal(this.app, view, this.note, this.match, this.indices).open();
+      new NoteEditorModal(this.app, view, this.note, this.match, updateData).open();
     };
 
     return block;

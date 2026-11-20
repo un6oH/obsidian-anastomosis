@@ -36,8 +36,8 @@ export interface NoteList {
 export interface MindMap {
   title: string;
   studySettings: FSRSParameters; 
-  range: number[]; // 0-based index of start (inclusive) and end (exclusive) line 
   notes: Note[];
+  groups: NoteGroup[];
 }
 
 export interface Settings {

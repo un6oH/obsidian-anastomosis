@@ -1,5 +1,5 @@
 {
-	"name": "mind-map-editor-plugin",
+	"name": "anastomosis-plugin",
 	"version": "1.0.0",
 	"description": "Create interconnected mind maps from lists, and study them using spaced repetition.",
 	"main": "main.js",

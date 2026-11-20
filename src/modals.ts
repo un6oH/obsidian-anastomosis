@@ -1,12 +1,12 @@
 import { EditorView } from '@codemirror/view';
-import { App, ButtonComponent, Editor, Modal, Notice, Setting, SuggestModal, TextComponent, ToggleComponent } from 'obsidian';
+import { App, ButtonComponent, Editor, Modal, Setting, SuggestModal, TextComponent, ToggleComponent } from 'obsidian';
 import { createEmptyCard, generatorParameters, State } from 'ts-fsrs';
 import { ListItem, MindMap, Note, NoteList } from './types';
-import { parseNumberArray, parseMapTag, generateMapString, parseListItem, canStudy, generateNoteString, cardTagOpen, cardTagClose, parseNote } from './helpers';
-import MindMapEditorPlugin from './main';
+import { parseNumberArray, generateMapString, parseListItem, canStudy, generateNoteString, cardTagOpen, cardTagClose, parseNote } from './helpers';
+import AnastomosisPlugin from './main';
 
 export class MindMapCreatorModal extends Modal {
-	constructor(app: App, title: string, editorCallback: (text: string) => void) {
+	constructor(app: App, title: string, editorCallback: (map: MindMap) => void) {
 		super(app);
 
 		this.setTitle("Create a mind map");
@@ -15,8 +15,8 @@ export class MindMapCreatorModal extends Modal {
 			// separateHeadings: false, 
 			// crosslink: true, 
 			studySettings: generatorParameters(),
-			range: [],
 			notes: [],
+			groups: []
 		}
 
 		new Setting(this.contentEl)
@@ -72,14 +72,14 @@ export class MindMapCreatorModal extends Modal {
 				.setCta()
 				.onClick(() => {
 					this.close();
-					editorCallback(generateMapString(map, true));
+					editorCallback(map);
 				})
 			)
 	}
 }
 
 export class ViewMindMapModal extends Modal {
-	constructor(plugin: MindMapEditorPlugin, editor: Editor, mindMap: MindMap) {
+	constructor(plugin: AnastomosisPlugin, editor: Editor, mindMap: MindMap) {
 		super(plugin.app);
 
 		this.setTitle("Study " + mindMap.title);
@@ -208,7 +208,7 @@ export class MapSettingsEditorModal extends Modal {
 
 // Called from note widget. Specifies start and end indices of text within widget
 export class NoteEditorModal extends Modal {
-	constructor(app: App, view: EditorView, note: Note, noteMatch: RegExpExecArray, indices: number[][]) {
+	constructor(app: App, view: EditorView, note: Note, noteMatch: RegExpExecArray, updateCallback: (note: Note) => void) {
 		super(app);
 		const card = note.card!;
 		const newNote = parseNote(noteMatch);
@@ -272,8 +272,8 @@ export class NoteEditorModal extends Modal {
 							newNote.id = "";
 							idField.setPlaceholder("linking disabled").setValue("");
 						} else {
-							newNote.id = note.id ? note.id : undefined;
-							let newText = note.id ? note.id : "";
+							newNote.id = note.id ?? undefined;
+							let newText = note.id ?? "";
 							idField.setPlaceholder(newText).setValue(newText);
 						}
 						idField.setDisabled(unlink);
@@ -393,22 +393,10 @@ export class NoteEditorModal extends Modal {
 					.setCta()
 					.onClick(() => {
 						this.close();
-						this.updateData(view, indices, newNote);
+						updateCallback(newNote);
 					})
 			);
 		return;
-	}
-
-	// indices of noteMatch
-	updateData(view: EditorView, indices: number[][], note: Note) {
-		const contentEdit = view.state.update({
-			changes: {
-				from: indices[3][0],
-				to: indices[0][1],
-				insert: generateNoteString(note)
-			}
-		});
-		view.dispatch(contentEdit);
 	}
 }
 

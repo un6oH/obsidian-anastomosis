@@ -1,12 +1,12 @@
 import { ViewUpdate, PluginValue, EditorView, ViewPlugin, DecorationSet, Decoration } from '@codemirror/view';
-import { Line, RangeSetBuilder } from '@codemirror/state';
+import { Line, RangeSetBuilder, StateField } from '@codemirror/state';
 import { App } from 'obsidian';
-import { errorPattern, cardTagOpen, cardTagClose, noteRegex } from './helpers';
-import { ErrorWidget, NoteDataWidget } from './widgets';
+import { errorPattern, cardTagOpen, cardTagClose, noteRegex, mapTagRegex, mapTagPattern } from './helpers';
+import { ErrorWidget, NoteWidget } from './widgets';
 
-export function createMindMapEditorViewPlugin(app: App) {
+export function createAnastomosisViewPlugin(app: App, ranges: StateField<number[][]>) {
   return ViewPlugin.fromClass(
-    class MindMapEditorViewPlugin implements PluginValue {
+    class AnastomosisViewPlugin implements PluginValue {
       decorations: DecorationSet;
 
       constructor(view: EditorView) {
@@ -14,6 +14,7 @@ export function createMindMapEditorViewPlugin(app: App) {
       }
 
       update(update: ViewUpdate) {
+        // console.log("createAnastomosisViewPlugin.update()", update.view.state.field(ranges));
         if (update.docChanged || update.viewportChanged) {
           this.decorations = this.buildDecorations(update.view);
         }
@@ -22,9 +23,10 @@ export function createMindMapEditorViewPlugin(app: App) {
       destroy() { }
 
       buildDecorations(view: EditorView): DecorationSet {
+        const mindMapRanges = view.state.field(ranges);
+
         const builder = new RangeSetBuilder<Decoration>();
         const decorations: { start: number, end: number, deco: Decoration }[] = [];
-
         for (let { from, to } of view.visibleRanges) {
           const text = view.state.doc.sliceString(from, to);
 
@@ -37,10 +39,26 @@ export function createMindMapEditorViewPlugin(app: App) {
             let line = view.state.doc.lineAt(lineStart);
             lineEnd = line.to;
             lineStart = line.to + 1;
-            lines.push(line);
-          }
+            // only check lines within a mind map range
+            const lineIndex = line.number - 1;
+            if (mindMapRanges.some(range => range[0] <= lineIndex && lineIndex < range[1])) {
+              let noteMatch = noteRegex.exec(line.text);
+              if (noteMatch) {
+                let indices = (noteMatch as any).indices;
+                indices = indices.map((pair: number[]) => pair ? [pair[0] + line.from, pair[1] + line.from] : undefined);
 
-          for (let line of lines) {
+                const start = indices[6][0] - cardTagOpen.length;
+                const end = indices[6][1] + cardTagClose.length;
+
+                const deco = Decoration.replace({
+                  widget: new NoteWidget(app, noteMatch, indices),
+                  inclusive: false
+                });
+                decorations.push({ start, end, deco });
+              }
+            }
+          }
+          /* for (let line of lines) {
             let noteMatch = noteRegex.exec(line.text);
             if (noteMatch) {
               let indices = (noteMatch as any).indices;
@@ -55,7 +73,7 @@ export function createMindMapEditorViewPlugin(app: App) {
               });
               decorations.push({ start, end, deco });
             }
-          }
+          } */
 
           let errorMatch;
           const errorRegex = RegExp(errorPattern, 'dgm');
@@ -64,6 +82,10 @@ export function createMindMapEditorViewPlugin(app: App) {
             indices = indices.map((pair) => [pair[0] + from, pair[1] + from]);
             const start = indices[1][0];
             const end = indices[1][1];
+            const lineIndex = view.state.doc.lineAt(start).number;
+            if (!mindMapRanges.some(range => range[0] < lineIndex && lineIndex < range[1])) {
+              continue;
+            }
             const warning = parseInt(errorMatch[2]);
             const deco = Decoration.replace({
               widget: new ErrorWidget(indices, warning),
@@ -78,6 +100,10 @@ export function createMindMapEditorViewPlugin(app: App) {
             let indices: number[][] = (spaceMatch as any).indices;
             const start = from + indices[1][0];
             const end = from + indices[1][1];
+            const lineIndex = view.state.doc.lineAt(start).number;
+            if (!mindMapRanges.some(range => range[0] < lineIndex && lineIndex < range[1])) {
+              continue;
+            }
             const deco = Decoration.mark({
               class: "mark-indent-error"
             });

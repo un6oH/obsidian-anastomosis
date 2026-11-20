@@ -12,16 +12,19 @@ export const cardTagPattern = `${cardTagOpen}(.*?)${cardTagClose}`;
 export const cardTagRegex = RegExp(cardTagPattern, 'd');
 
 // [1] tabs; [2] list delimiter; [3] content; [4] id tag; [5] id; [6] card
-export const notePattern = `^(\\t*)(\\d+\\. |- )(.*?)(#(\\w*))?${cardTagOpen}(.*?)${cardTagClose}`;
+export const notePattern = `^(\\t*)(\\d+\\. |- )(.*?)(#(\\w*))?\\s*${cardTagOpen}(.*?)${cardTagClose}`;
 export const noteRegex = RegExp(notePattern, 'd');
 
 export const idTagPattern = "#(\\w*)$";
 export const idTagRegex = RegExp(idTagPattern, 'd');
 
-export const mapTagOpen = "%%map";
+export const mapTagOpen = "%%anastomosis";
 export const mapTagClose = "%%";
-export const mapTagPattern = `${mapTagOpen}(.*)${mapTagClose}`;
+export const mapTagPattern = `${mapTagOpen}(.+)${mapTagClose}`;
 export const mapTagRegex = RegExp(mapTagPattern, 'd');
+
+export const endMapTagPattern = `%%anastomosis%%`;
+export const endMapTagRegex = RegExp(endMapTagPattern, 'd');
 
 export const imagePattern = `\\!\\[\\[(.*?\\.png)(\\|\\d+)?\\]\\]`;
 export const imageRegex = RegExp(imagePattern, 'd');
@@ -74,8 +77,8 @@ export function parseMapTag(text: string): MindMap | null {
 	return { 
 		title: parameters[0] ? parameters[0] : "Untitled", 
 		studySettings: generatorParameters(props),
-		range: [], // placeholder
 		notes: [], // placeholder
+		groups: [],
 	};
 }
 
@@ -120,7 +123,7 @@ export function parseNote(match: RegExpExecArray): Note {
 	let listNumber = parseListNumber(match[2]);
 	let content = match[3].trim();
 	let study = canStudy(content);
-	let id = match[4] ? match[5] : undefined;
+	let id = match[4] ? match[5].trim() : undefined;
 	let card = parseCard(match[6]);
 	
 	return { level, listNumber, content, study, id, card, line: undefined, indices: undefined };
@@ -195,7 +198,7 @@ export function generateNoteString(note: Note): string {
 		str += " #" + note.id;
 	}
 	if (note.card) {
-		str += generateCardString(note.card, true);
+		str += " " + generateCardString(note.card, true);
 	}
 	return str;
 }
